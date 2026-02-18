@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Salão — Caixa</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div>
+    <h1><span class="logo-initials">JF</span><span class="logo-name">Cabeleireiros</span></h1>
+  </div>
+  <div style="text-align:right; display:flex; align-items:center; gap:10px;">
+    <button class="refresh-btn" id="btnRefresh" title="Sincronizar com Sheets" onclick="refreshData()">↻</button>
+    <button class="refresh-btn delete-btn" id="btnDeleteAll" title="Apagar tudo" onclick="deleteAll()">🗑</button>
+    <div>
+      <div class="header-date" id="headerDate"></div>
+      <div style="font-size:0.72rem; margin-top:2px; color: var(--rose-light)">
+        <span class="connection-dot" id="connDot"></span><span id="connLabel">Local</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="caixa">💰 Caixa</div>
+  <div class="tab" data-tab="historico">📋 Hoje</div>
+  <div class="tab" data-tab="medias">📊 Médias</div>
+  <div class="tab" data-tab="config">⚙️ Config</div>
+</div>
+
+<!-- ── CAIXA ── -->
+<div class="view active" id="view-caixa">
+  <div class="services-grid" id="servicesGrid"></div>
+
+  <div class="total-card">
+    <div>
+      <div class="total-label">Total da entrada</div>
+      <div class="total-value" id="totalValue">0,00 €</div>
+      <div class="total-services" id="totalServices">Nenhum serviço selecionado</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:2rem">💇‍♀️</div>
+    </div>
+  </div>
+
+  <div class="nota-row">
+    <input class="nota-input" id="notaInput" placeholder="Observação (opcional)..." type="text" maxlength="80">
+  </div>
+
+  <div class="action-row">
+    <button class="btn-clear" id="btnClear">Limpar</button>
+    <button class="btn-register" id="btnRegister">Registar Entrada</button>
+  </div>
+</div>
+
+<!-- ── HISTÓRICO ── -->
+<div class="view" id="view-historico">
+  <div class="history-header">
+    <div class="history-title">Entradas de hoje</div>
+    <div class="history-total-badge" id="historyTotalBadge">0,00 €</div>
+  </div>
+  <div id="historyList"></div>
+</div>
+
+<!-- ── MÉDIAS ── -->
+<div class="view" id="view-medias">
+  <div class="medias-layout">
+
+    <!-- LEFT: month picker + stat cards + service bars -->
+    <div class="medias-left">
+      <div class="month-selector">
+        <span>📅</span>
+        <select id="monthSelect"></select>
+      </div>
+
+      <div class="stats-section">
+        <div class="stats-section-title">Resumo</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+          <div class="stat-card">
+            <div class="stat-label">Total do mês</div>
+            <div class="stat-value" id="statTotal">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Média/dia</div>
+            <div class="stat-value" id="statAvgDay">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Nº entradas</div>
+            <div class="stat-value" id="statEntries">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Média/entrada</div>
+            <div class="stat-value" id="statAvgEntry">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <div class="stats-section-title">Por serviço</div>
+        <div id="serviceBars"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: line chart by year -->
+    <div class="medias-right">
+      <div class="chart-panel">
+        <div class="chart-panel-header">
+          <div class="chart-mode-toggle">
+            <button class="mode-btn active" id="chartModeYear">Ano</button>
+            <button class="mode-btn" id="chartModeMonth">Mês</button>
+          </div>
+          <div class="year-nav">
+            <button class="year-btn" id="yearPrev">‹</button>
+            <span class="year-label" id="yearLabel">2026</span>
+            <button class="year-btn" id="yearNext">›</button>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── CONFIG ── -->
+<div class="view" id="view-config">
+  <div class="settings-section">
+    <div class="settings-label">Serviços & Preços</div>
+    <div class="setting-row" id="servicesEditor"></div>
+    <button class="btn-add-svc" id="btnAddSvc">+ Adicionar Serviço</button>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-label">Google Sheets (opcional)</div>
+    <div class="setting-row">
+      <div class="setting-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
+        <div>
+          <div class="setting-item-name">URL - Google Sheets</div>
+        </div>
+        <input class="sheets-url-input" id="sheetsUrl" placeholder="https://script.google.com/macros/s/..." type="url">
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-save-settings" id="btnSaveSettings">Guardar Configurações</button>
+  <div class="sync-status" id="syncStatus"></div>
+<!--
+  <div style="margin-top:20px; padding:14px 16px; background:var(--warm); border-radius:14px; font-size:0.78rem; color:var(--gray); line-height:1.6;">
+    <strong style="color:var(--brown-mid);">Como ligar ao Google Sheets:</strong><br>
+    1. Abre o teu Google Sheets → Extensões → Apps Script<br>
+    2. Cola o código do ficheiro <strong>google-apps-script.js</strong><br>
+    3. Clica em Implementar → Nova implementação → Aplicação Web<br>
+    4. Define "Quem tem acesso" para "Qualquer pessoa"<br>
+    5. Copia o URL e cola acima
+  </div>
+-->
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Modal confirmar apagar tudo -->
+<div class="modal-overlay" id="deleteConfirmOverlay">
+  <div class="modal-box">
+    <div class="modal-title" style="color:#c0392b">⚠️ Apagar tudo?</div>
+    <p style="font-size:0.88rem;color:var(--text-mid);margin:8px 0 18px">Todas as entradas serão eliminadas permanentemente. Esta ação não pode ser revertida.</p>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="deleteConfirmCancel">Cancelar</button>
+      <button class="btn-modal-ok" id="deleteConfirmOk" style="background:#c0392b;border-color:#a93226">Apagar tudo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal adicionar serviço -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-title">Novo Serviço</div>
+    <input class="modal-input" id="modalSvcName" placeholder="Nome do serviço (ex: Hidratação)">
+    <input class="modal-input" id="modalSvcIcon" placeholder="Emoji (ex: 💆)">
+    <input class="modal-input" id="modalSvcPrice" placeholder="Preço em € (ex: 25)" type="number" min="0" step="0.5">
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="modalCancel">Cancelar</button>
+      <button class="btn-modal-ok" id="modalOk">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
