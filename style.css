@@ -1030,62 +1030,87 @@ header h1 {
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: 18px;
-  padding: 12px;
+  padding: 10px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.22);
   display: none;
-  min-width: 200px;
-  max-width: 260px;
+  min-width: 240px;
+  max-width: 300px;
 }
 .inline-color-popup.show { display: block; }
 .inline-color-popup-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 9px;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
 }
 .inline-color-swatch {
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 3px solid transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 99px;
+  border: 2px solid var(--border);
+  background: var(--surface);
   cursor: pointer;
-  transition: transform 0.12s, border-color 0.12s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  transition: border-color 0.12s, background 0.12s;
+  overflow: hidden;
 }
-.inline-color-swatch:hover { transform: scale(1.15); }
+.inline-color-swatch:hover { border-color: var(--accent); background: var(--accent-muted); }
 .inline-color-swatch.selected {
   border-color: var(--accent);
-  transform: scale(1.18);
+  background: var(--accent-muted);
+  box-shadow: 0 2px 6px rgba(103,64,46,0.18);
+}
+
+/* ── SHARED COLOR CHIP PARTS ── */
+.swatch-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(0,0,0,0.10);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+}
+.swatch-lbl {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-mid);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── HAIR COLOR GRID (modal) ── */
 .hair-color-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
   margin-bottom: 10px;
 }
 .hair-color-swatch {
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 3px solid transparent;
-  cursor: pointer;
-  transition: transform 0.12s, border-color 0.12s;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
-}
-.hair-color-swatch:hover { transform: scale(1.12); }
-.hair-color-swatch.selected {
-  border-color: var(--accent);
-  transform: scale(1.15);
-  box-shadow: 0 3px 10px rgba(0,0,0,0.25);
-}
-.hair-color-add {
-  background: var(--surface-2);
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  font-weight: 700;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 99px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.hair-color-swatch:hover { border-color: var(--accent); background: var(--accent-muted); }
+.hair-color-swatch.selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: 0 2px 8px rgba(103,64,46,0.18);
+}
+.hair-color-add {
+  border-style: dashed;
+  border-color: var(--border);
+  background: var(--surface-2);
   color: var(--text-soft);
-  border: 2px dashed var(--border);
   transition: border-color 0.15s, background 0.15s;
 }
 .hair-color-add:hover { border-color: var(--accent); background: var(--accent-muted); color: var(--accent); }

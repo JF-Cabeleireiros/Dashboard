@@ -1024,10 +1024,11 @@ function openInlineColorPicker(clientId, anchorEl) {
   const grid = document.getElementById('inlineColorGrid');
   grid.innerHTML = hairColors.map(hc => `
     <div class="inline-color-swatch${client?.hairColor === hc.hex ? ' selected' : ''}"
-         style="background:${hc.hex}"
          data-hex="${hc.hex}"
-         data-name="${hc.name}"
-         title="${hc.name}"></div>
+         data-name="${hc.name}">
+      <span class="swatch-dot" style="background:${hc.hex}"></span>
+      <span class="swatch-lbl">${hc.name}</span>
+    </div>
   `).join('');
   grid.querySelectorAll('.inline-color-swatch').forEach(sw => {
     sw.addEventListener('click', (e) => {
@@ -1048,7 +1049,7 @@ function openInlineColorPicker(clientId, anchorEl) {
 
   // Position popup below the anchor
   const rect = anchorEl.getBoundingClientRect();
-  const popupW = 210;
+  const popupW = 240;
   let left = rect.left;
   let top  = rect.bottom + 8 + window.scrollY;
   if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
@@ -1154,11 +1155,12 @@ function renderHairColorGrid() {
   if (!grid) return;
   grid.innerHTML = hairColors.map(hc => `
     <div class="hair-color-swatch${hc.hex === _selectedHairColor?.hex ? ' selected' : ''}"
-         style="background:${hc.hex}"
          data-hex="${hc.hex}"
-         data-name="${hc.name}"
-         title="${hc.name}"></div>
-  `).join('') + `<div class="hair-color-swatch hair-color-add" title="Criar nova cor">+</div>`;
+         data-name="${hc.name}">
+      <span class="swatch-dot" style="background:${hc.hex}"></span>
+      <span class="swatch-lbl">${hc.name}</span>
+    </div>
+  `).join('') + `<div class="hair-color-swatch hair-color-add" title="Criar nova cor"><span class="swatch-lbl">+ Nova cor</span></div>`;
   grid.querySelectorAll('.hair-color-swatch:not(.hair-color-add)').forEach(sw => {
     sw.addEventListener('click', () => {
       _selectedHairColor = { name: sw.dataset.name, hex: sw.dataset.hex };
