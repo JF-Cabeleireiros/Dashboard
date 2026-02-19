@@ -240,14 +240,16 @@
       <div class="setting-item" style="flex-direction:column; align-items:flex-start; gap:8px;">
         <div>
           <div class="setting-item-name">URL - Google Sheets</div>
+          <div class="setting-item-desc">Cola o URL do Apps Script para ligar e importar dados.</div>
         </div>
         <input class="sheets-url-input" id="sheetsUrl" placeholder="https://script.google.com/macros/s/..." type="url">
+        <button class="btn-sheets-connect" id="btnConnectSheets">Ligar/Importar</button>
+        <div class="sync-status" id="sheetsConnectStatus"></div>
       </div>
     </div>
   </div>
 
   <button class="btn-save-settings" id="btnSaveSettings">Guardar Configurações</button>
-  <div class="sync-status" id="syncStatus"></div>
 <!--
   <div style="margin-top:20px; padding:14px 16px; background:var(--warm); border-radius:14px; font-size:0.78rem; color:var(--gray); line-height:1.6;">
     <strong style="color:var(--brown-mid);">Como ligar ao Google Sheets:</strong><br>

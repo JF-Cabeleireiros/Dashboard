@@ -897,13 +897,37 @@ document.getElementById('btnSaveSettings').addEventListener('click', () => {
   renderServices();
   updateConnStatus();
   showToast('✅ Configurações guardadas!');
+  // Push local edits to Sheets if connected (does not re-import)
   if (sheetsUrl) {
     entries.filter(e => !e.synced).forEach(syncEntry);
-    saveServicesToSheets();  // sincroniza serviços editados
-    saveClientsToSheets();   // sincroniza clientes
-    saveExpenseCatsToSheets(); // sincroniza categorias de despesas
-    loadFromSheets();        // sincroniza entradas existentes no Sheets
-    loadClientsFromSheets(); // sincroniza clientes existentes no Sheets
+    saveServicesToSheets();
+    saveClientsToSheets();
+    saveExpenseCatsToSheets();
+  }
+});
+
+document.getElementById('btnConnectSheets').addEventListener('click', async () => {
+  const url = document.getElementById('sheetsUrl').value.trim();
+  const statusEl = document.getElementById('sheetsConnectStatus');
+  if (!url) {
+    statusEl.textContent = 'Cola o URL do Apps Script primeiro.';
+    statusEl.className = 'sync-status err';
+    return;
+  }
+  sheetsUrl = url;
+  save();
+  updateConnStatus();
+  statusEl.textContent = 'A ligar e importar...';
+  statusEl.className = 'sync-status';
+  try {
+    await loadFromSheets();
+    await loadClientsFromSheets();
+    statusEl.textContent = '✅ Ligado! Dados importados com sucesso.';
+    statusEl.className = 'sync-status ok';
+    showToast('✅ Sheets ligado e importado!');
+  } catch (err) {
+    statusEl.textContent = 'Erro: ' + (err.message || 'Não foi possível ligar.');
+    statusEl.className = 'sync-status err';
   }
 });
 
@@ -1314,11 +1338,11 @@ async function syncEntry(entry) {
     });
     entry.synced = true;
     save();
-    const status = document.getElementById('syncStatus');
+    const status = document.getElementById('sheetsConnectStatus');
     if (status) { status.textContent = '✅ Sincronizado com Google Sheets'; status.className = 'sync-status ok'; }
   } catch (err) {
     console.error('Sync error', err);
-    const status = document.getElementById('syncStatus');
+    const status = document.getElementById('sheetsConnectStatus');
     if (status) { status.textContent = '❌ Erro ao sincronizar'; status.className = 'sync-status err'; }
   }
 }

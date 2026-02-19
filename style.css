@@ -664,6 +664,22 @@ header h1 {
   transition: background 0.15s;
 }
 .btn-save-settings:active { background: var(--accent-dark); }
+.btn-sheets-connect {
+  width: 100%;
+  background: var(--surface);
+  border: 1.5px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-sheets-connect:hover  { background: var(--accent-muted); }
+.btn-sheets-connect:active { background: var(--accent); color: #fff; }
 .sync-status {
   text-align: center;
   font-size: 0.78rem;
