@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Salão — Caixa</title>
+  <link rel="icon" type="image/x-icon" href="media/favicon.ico">
+  <link rel="icon" type="image/png" href="media/favicon.png">
+  <link rel="apple-touch-icon" href="media/favicon.png">
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -27,6 +30,7 @@
 
 <div class="tabs">
   <div class="tab active" data-tab="caixa">💰 Caixa</div>
+  <div class="tab" data-tab="clientes">👤 Clientes</div>
   <div class="tab" data-tab="historico">📋 Hoje</div>
   <div class="tab" data-tab="medias">📊 Médias</div>
   <div class="tab" data-tab="config">⚙️ Config</div>
@@ -34,16 +38,40 @@
 
 <!-- ── CAIXA ── -->
 <div class="view active" id="view-caixa">
+
+  <div class="client-select-row">
+    <span class="client-select-icon">👤</span>
+    <select class="client-select-dropdown" id="caixaClientSelect">
+      <option value="">Cliente (opcional)...</option>
+    </select>
+  </div>
+
   <div class="services-grid" id="servicesGrid"></div>
 
   <div class="total-card">
     <div>
       <div class="total-label">Total da entrada</div>
       <div class="total-value" id="totalValue">0,00 €</div>
+      <div class="total-adj-info" id="totalAdjInfo"></div>
       <div class="total-services" id="totalServices">Nenhum serviço selecionado</div>
     </div>
     <div style="text-align:right">
       <div style="font-size:2rem">💇‍♀️</div>
+    </div>
+  </div>
+
+  <div class="adj-card" id="adjCard">
+    <div class="adj-header">
+      <span class="adj-label">Ajuste ao total</span>
+      <div class="adj-pills">
+        <button class="adj-pill active" data-adj="none">Nenhum</button>
+        <button class="adj-pill" data-adj="discount">💸 Desconto</button>
+        <button class="adj-pill" data-adj="extra">➕ Extra</button>
+      </div>
+    </div>
+    <div class="adj-amount-row" id="adjAmountRow" style="display:none">
+      <input class="adj-amount-input" id="adjAmountInput" type="number" min="0" step="0.5" placeholder="0,00">
+      <span class="adj-unit">€</span>
     </div>
   </div>
 
@@ -55,6 +83,19 @@
     <button class="btn-clear" id="btnClear">Limpar</button>
     <button class="btn-register" id="btnRegister">Registar Entrada</button>
   </div>
+</div>
+
+<!-- ── CLIENTES ── -->
+<div class="view" id="view-clientes">
+  <button class="btn-add-client" id="btnAddClient">
+    <span class="btn-add-client-icon">+</span>
+    Novo Cliente
+  </button>
+  <div class="clients-search-row">
+    <span class="clients-search-icon">🔍</span>
+    <input class="clients-search-input" id="clientsSearch" type="search" placeholder="Pesquisar clientes...">
+  </div>
+  <div id="clientesList"></div>
 </div>
 
 <!-- ── HISTÓRICO ── -->
@@ -174,6 +215,46 @@
       <button class="btn-modal-cancel" id="deleteConfirmCancel">Cancelar</button>
       <button class="btn-modal-ok" id="deleteConfirmOk" style="background:#c0392b;border-color:#a93226">Apagar tudo</button>
     </div>
+  </div>
+</div>
+
+<!-- Modal clientes -->
+<div class="modal-overlay" id="clientModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title" id="clientModalTitle">Novo Cliente</div>
+    <input class="modal-input" id="clientModalName" placeholder="Nome do cliente">
+    <input class="modal-input" id="clientModalNotes" placeholder="Notas (ex: alérgica a amónia, prefere corte a seco...)">
+    <div class="modal-section-label">Cor do cabelo</div>
+    <div class="hair-color-grid" id="hairColorGrid"></div>
+    <div class="new-color-form" id="newColorForm">
+      <input type="color" id="newColorPicker" value="#c0a060" class="new-color-picker">
+      <input class="new-color-name-input" id="newColorName" placeholder="Nome da cor (ex: Loiro Mel)" maxlength="18">
+      <button class="btn-new-color-confirm" id="newColorConfirm">+ Adicionar</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="clientModalCancel">Cancelar</button>
+      <button class="btn-modal-ok" id="clientModalOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Inline color popup (shared) -->
+<div id="inlineColorPopup" class="inline-color-popup">
+  <div class="inline-color-popup-grid" id="inlineColorGrid"></div>
+</div>
+
+<!-- Modal histórico de cliente -->
+<div class="modal-overlay" id="clientHistoryOverlay">
+  <div class="modal-box client-history-box">
+    <div class="client-history-header">
+      <div class="client-history-swatch" id="clientHistorySwatch"></div>
+      <div class="client-history-info">
+        <div class="client-history-name" id="clientHistoryName"></div>
+        <div class="client-history-sub" id="clientHistorySub"></div>
+      </div>
+      <button class="client-history-close" id="clientHistoryClose">✕</button>
+    </div>
+    <div id="clientHistoryList"></div>
   </div>
 </div>
 

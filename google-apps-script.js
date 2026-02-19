@@ -16,6 +16,7 @@
 const SHEET_NAME     = 'Entradas';  // Nome da folha onde ficam as entradas
 const STATS_SHEET    = 'Resumo';    // Nome da folha de resumo (criada automaticamente)
 const SERVICES_SHEET = 'Serviços';  // Nome da folha dos serviços (editada pelo utilizador)
+const CLIENTS_SHEET  = 'Clientes';  // Nome da folha dos clientes
 
 // Chamada quando a webapp envia dados (POST)
 function doPost(e) {
@@ -25,6 +26,14 @@ function doPost(e) {
     // Ação de guardar lista de serviços
     if (data.action === 'saveServices') {
       saveServicesData(data.services);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Ação de guardar lista de clientes
+    if (data.action === 'saveClients') {
+      saveClientsData(data.clients);
       return ContentService
         .createTextOutput(JSON.stringify({ status: 'ok' }))
         .setMimeType(ContentService.MimeType.JSON);
@@ -72,6 +81,13 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
+  // Devolve a lista de clientes
+  if (action === 'getClients') {
+    return ContentService
+      .createTextOutput(JSON.stringify(getClientsData()))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   // Devolve TODAS as entradas (para sincronização inicial)
   if (action === 'getAll') {
     return ContentService
@@ -99,20 +115,22 @@ function appendEntry(data) {
   // Cria a folha se não existir
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME);
-    // Cabeçalhos (coluna F = ID único, G = JSON de serviços para sincronização)
-    sheet.appendRow(['Data', 'Hora', 'Serviços', 'Total (€)', 'Observação', 'ID', 'ServicesJSON']);
-    sheet.getRange(1, 1, 1, 7).setFontWeight('bold');
+    // Cabeçalhos — col A-E visíveis, F-J ocultas (sistema)
+    sheet.appendRow(['Data', 'Hora', 'Serviços', 'Total (€)', 'Observação', 'ID', 'ServicesJSON', 'TotalBase', 'Ajuste', 'Cliente']);
+    sheet.getRange(1, 1, 1, 10).setFontWeight('bold');
     sheet.setFrozenRows(1);
-    // Formatar coluna Total como moeda
+    // Formatar colunas de total como moeda
     sheet.getRange('D:D').setNumberFormat('€#,##0.00');
-    // Ocultar colunas de sistema (F e G)
-    sheet.hideColumns(6, 2);
+    sheet.getRange('H:H').setNumberFormat('€#,##0.00');
+    // Ocultar colunas de sistema (F, G, H, I)
+    sheet.hideColumns(6, 4);
     // Larguras
     sheet.setColumnWidth(1, 100);
     sheet.setColumnWidth(2, 70);
-    sheet.setColumnWidth(3, 280);
+    sheet.setColumnWidth(3, 260);
     sheet.setColumnWidth(4, 100);
-    sheet.setColumnWidth(5, 200);
+    sheet.setColumnWidth(5, 180);
+    sheet.setColumnWidth(10, 160);
   }
 
   sheet.appendRow([
@@ -121,8 +139,11 @@ function appendEntry(data) {
     data.services,
     data.total,
     data.nota || '',
-    data.id || '',           // coluna F — ID único para sincronização
-    data.servicesJson || '', // coluna G — JSON dos serviços para reconstrução
+    data.id || '',            // col F — IDúnico
+    data.servicesJson || '',  // col G — JSON dos serviços
+    data.baseTotal || data.total,  // col H — total base (antes do ajuste)
+    data.adjustment || '',    // col I — ajuste aplicado (ex: "-5" ou "+8")
+    data.clientName || '',    // col J — nome do cliente
   ]);
 
   // Alternar cores nas linhas para facilitar leitura
@@ -178,6 +199,9 @@ function getAllData() {
       services: parsedServices, // array de objetos ou null
       total: parseFloat(row[3]) || 0,
       nota: row[4] || '',
+      baseTotal: parseFloat(row[7]) || parseFloat(row[3]) || 0,
+      adjustment: row[8] ? String(row[8]) : '',
+      clientName: row[9] ? String(row[9]) : '',
       synced: true,
     });
   }
@@ -250,7 +274,61 @@ function updateSummary() {
 
   summarySheet.setFrozenRows(1);
 }
+// ── CLIENTES ───────────────────────────────────────────────────────────────────
 
+// Devolve a lista de clientes da folha 'Clientes'
+function getClientsData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CLIENTS_SHEET);
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+
+  const result = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[0]) continue;
+    result.push({
+      id:            String(row[0]),
+      name:          String(row[1] || ''),
+      hairColor:     String(row[2] || '#888'),
+      hairColorName: String(row[3] || ''),
+      notes:         String(row[4] || ''),
+      addedDate:     String(row[5] || ''),
+    });
+  }
+  return result;
+}
+
+// Escreve toda a lista de clientes na folha 'Clientes'
+function saveClientsData(clientsList) {
+  if (!Array.isArray(clientsList)) return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CLIENTS_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(CLIENTS_SHEET);
+    sheet.setColumnWidth(1, 140);
+    sheet.setColumnWidth(2, 200);
+    sheet.setColumnWidth(3, 100);
+    sheet.setColumnWidth(4, 140);
+    sheet.setColumnWidth(5, 260);
+    sheet.setColumnWidth(6, 110);
+  } else {
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 0) sheet.clearContents();
+  }
+
+  sheet.appendRow(['ID', 'Nome', 'Cor (hex)', 'Nome da cor', 'Notas', 'Data de registo']);
+  sheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+
+  clientsList.forEach(c => {
+    sheet.appendRow([c.id, c.name, c.hairColor || '#888', c.hairColorName || '', c.notes || '', c.addedDate || '']);
+  });
+}
 // ── SERVIÇOS ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICES_DATA = [

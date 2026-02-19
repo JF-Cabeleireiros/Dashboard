@@ -21,6 +21,31 @@ let services = DB.get('services', DEFAULT_SERVICES);
 let entries = DB.get('entries', []);
 let selected = {}; // { serviceId: count }
 let sheetsUrl = DB.get('sheetsUrl', '');
+let clients = DB.get('clients', []);
+
+const DEFAULT_HAIR_COLORS = [
+  { name: 'Preto',         hex: '#1a1a1a' },
+  { name: 'Castanho Esc.', hex: '#3d1f00' },
+  { name: 'Castanho',      hex: '#7c4a1e' },
+  { name: 'Cast. Claro',   hex: '#b07d45' },
+  { name: 'Loiro Esc.',    hex: '#c4a032' },
+  { name: 'Loiro',         hex: '#e8c366' },
+  { name: 'Loiro Claro',   hex: '#f5e1a0' },
+  { name: 'Ruivo',         hex: '#c03020' },
+  { name: 'Cinzento',      hex: '#9e9e9e' },
+  { name: 'Branco',        hex: '#dedede' },
+  { name: 'Azul',          hex: '#2979ff' },
+  { name: 'Roxo',          hex: '#9c27b0' },
+  { name: 'Rosa',          hex: '#e91e8c' },
+];
+let hairColors = DB.get('hairColors', DEFAULT_HAIR_COLORS);
+
+let _editingClientId = null;
+let _selectedHairColor = hairColors[0];
+
+// ── ADJUSTMENT STATE ──
+let _adjType = 'none'; // 'none' | 'discount' | 'extra'
+let _adjAmount = 0;
 
 // ── HELPERS ──
 function fmt(v) { return v.toFixed(2).replace('.', ',') + ' €'; }
@@ -35,6 +60,8 @@ function save() {
   DB.set('services', services);
   DB.set('entries', entries);
   DB.set('sheetsUrl', sheetsUrl);
+  DB.set('clients', clients);
+  DB.set('hairColors', hairColors);
 }
 
 function showToast(msg, dur = 2000) {
@@ -61,6 +88,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('view-' + tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'historico') renderHistory();
+    if (tab.dataset.tab === 'clientes') { renderClients(); renderClientSelector(); }
     if (tab.dataset.tab === 'medias') {
       renderStats();
       if (sheetsUrl && !_justDeletedAll) {
@@ -107,56 +135,107 @@ function toggleService(svc) {
 }
 
 function updateTotal() {
-  let total = 0;
+  let baseTotal = 0;
   let parts = [];
   services.forEach(svc => {
     const cnt = selected[svc.id] || 0;
     if (cnt > 0) {
       if (svc.price === 0 && svc._manualTotal) {
-        total += svc._manualTotal;
+        baseTotal += svc._manualTotal;
         parts.push(`${svc.name} (${fmt(svc._manualTotal)})`);
       } else {
-        total += svc.price * cnt;
+        baseTotal += svc.price * cnt;
         parts.push(cnt > 1 ? `${svc.name} ×${cnt}` : svc.name);
       }
     }
   });
-  document.getElementById('totalValue').textContent = fmt(total);
+
+  let finalTotal = baseTotal;
+  const adjInfo = document.getElementById('totalAdjInfo');
+  if (_adjType === 'discount' && _adjAmount > 0) {
+    finalTotal = Math.max(0, baseTotal - _adjAmount);
+    adjInfo.textContent = `Base: ${fmt(baseTotal)}  ·  💸 Desc: -${fmt(_adjAmount)}`;
+    adjInfo.style.display = '';
+  } else if (_adjType === 'extra' && _adjAmount > 0) {
+    finalTotal = baseTotal + _adjAmount;
+    adjInfo.textContent = `Base: ${fmt(baseTotal)}  ·  ➕ Extra: +${fmt(_adjAmount)}`;
+    adjInfo.style.display = '';
+  } else {
+    adjInfo.textContent = '';
+    adjInfo.style.display = 'none';
+  }
+
+  document.getElementById('totalValue').textContent = fmt(finalTotal);
   document.getElementById('totalServices').textContent = parts.length ? parts.join(' · ') : 'Nenhum serviço selecionado';
-  document.getElementById('btnRegister').disabled = total === 0;
+  document.getElementById('btnRegister').disabled = finalTotal === 0;
 }
 
 function clearSelection() {
   selected = {};
   services.forEach(s => { delete s._manualTotal; });
   document.getElementById('notaInput').value = '';
+  // Reset adjustment
+  _adjType = 'none';
+  _adjAmount = 0;
+  document.querySelectorAll('.adj-pill').forEach(b => {
+    b.classList.remove('active');
+    if (b.dataset.adj === 'none') b.classList.add('active');
+  });
+  document.getElementById('adjAmountRow').style.display = 'none';
+  document.getElementById('adjAmountInput').value = '';
   renderServices();
 }
 
 document.getElementById('btnClear').addEventListener('click', clearSelection);
 
+// ── ADJUSTMENT PILLS ──
+document.querySelectorAll('.adj-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    _adjType = btn.dataset.adj;
+    document.querySelectorAll('.adj-pill').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('adjAmountRow').style.display = _adjType === 'none' ? 'none' : 'flex';
+    if (_adjType !== 'none') document.getElementById('adjAmountInput').focus();
+    updateTotal();
+  });
+});
+document.getElementById('adjAmountInput').addEventListener('input', () => {
+  _adjAmount = parseFloat(document.getElementById('adjAmountInput').value) || 0;
+  updateTotal();
+});
+
 document.getElementById('btnRegister').addEventListener('click', async () => {
-  let total = 0;
+  let baseTotal = 0;
   let svcs = [];
   services.forEach(svc => {
     const cnt = selected[svc.id] || 0;
     if (cnt > 0) {
       if (svc.price === 0 && svc._manualTotal) {
-        total += svc._manualTotal;
+        baseTotal += svc._manualTotal;
         svcs.push({ id: svc.id, name: svc.name, count: cnt, subtotal: svc._manualTotal });
       } else {
-        total += svc.price * cnt;
+        baseTotal += svc.price * cnt;
         svcs.push({ id: svc.id, name: svc.name, count: cnt, subtotal: svc.price * cnt });
       }
     }
   });
+
+  let finalTotal = baseTotal;
+  if (_adjType === 'discount' && _adjAmount > 0) finalTotal = Math.max(0, baseTotal - _adjAmount);
+  else if (_adjType === 'extra' && _adjAmount > 0) finalTotal = baseTotal + _adjAmount;
+
+  const clientId = document.getElementById('caixaClientSelect').value;
+  const clientName = clientId ? (clients.find(c => c.id === clientId)?.name || '') : '';
 
   const entry = {
     id: Date.now().toString(),
     date: today(),
     time: now(),
     services: svcs,
-    total,
+    baseTotal,
+    adjustment: (_adjType !== 'none' && _adjAmount > 0) ? { type: _adjType, amount: _adjAmount } : null,
+    total: finalTotal,
+    clientName,
     nota: document.getElementById('notaInput').value.trim(),
     synced: false,
   };
@@ -166,6 +245,8 @@ document.getElementById('btnRegister').addEventListener('click', async () => {
 
   if (sheetsUrl) syncEntry(entry);
 
+  // Reset client selector
+  document.getElementById('caixaClientSelect').value = '';
   clearSelection();
   rerenderAll();
   showToast('✅ Entrada registada!');
@@ -194,17 +275,28 @@ function renderHistory() {
     list.innerHTML = `<div class="history-empty"><div class="big">📋</div>Sem entradas hoje ainda.</div>`;
     return;
   }
-  list.innerHTML = todayEntries.map(e => `
+  list.innerHTML = todayEntries.map(e => {
+    let adjBadge = '';
+    if (e.adjustment) {
+      const sign = e.adjustment.type === 'discount' ? '-' : '+';
+      adjBadge = `<span class="entry-adj-badge ${e.adjustment.type}">${sign}${fmt(e.adjustment.amount)}</span>`;
+    }
+    return `
     <div class="entry-card">
       <div class="entry-time"><div class="time">${e.time}</div></div>
       <div class="entry-info">
+        ${e.clientName ? `<div class="entry-client">👤 ${e.clientName}</div>` : ''}
         <div class="entry-services">${e.services.map(s => s.count > 1 ? `${s.name}×${s.count}` : s.name).join(' · ')}</div>
         ${e.nota ? `<div class="entry-nota">"${e.nota}"</div>` : ''}
       </div>
-      <div class="entry-value">${fmt(e.total)}</div>
+      <div class="entry-right">
+        ${adjBadge}
+        <div class="entry-value">${fmt(e.total)}</div>
+      </div>
       <button class="entry-delete" data-id="${e.id}">🗑</button>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   list.querySelectorAll('.entry-delete').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -587,7 +679,9 @@ document.getElementById('btnSaveSettings').addEventListener('click', () => {
   if (sheetsUrl) {
     entries.filter(e => !e.synced).forEach(syncEntry);
     saveServicesToSheets();  // sincroniza serviços editados
+    saveClientsToSheets();   // sincroniza clientes
     loadFromSheets();        // sincroniza entradas existentes no Sheets
+    loadClientsFromSheets(); // sincroniza clientes existentes no Sheets
   }
 });
 
@@ -632,6 +726,331 @@ document.getElementById('modalOverlay').addEventListener('click', (e) => {
     document.getElementById('modalOverlay').classList.remove('show');
 });
 
+// ── CLIENTS ──
+function renderClients() {
+  const list = document.getElementById('clientesList');
+  if (!list) return;
+  if (clients.length === 0) {
+    list.innerHTML = `<div class="clients-empty"><div class="big">👤</div>Sem clientes ainda.<br><small>Adiciona o primeiro cliente acima.</small></div>`;
+    return;
+  }
+  const query = (document.getElementById('clientsSearch')?.value || '').trim().toLowerCase();
+  const filtered = query
+    ? clients.filter(c =>
+        c.name.toLowerCase().includes(query) ||
+        (c.notes || '').toLowerCase().includes(query) ||
+        (c.hairColorName || '').toLowerCase().includes(query)
+      )
+    : clients;
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="clients-empty"><div class="big">🔍</div>Nenhum cliente encontrado.</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(c => `
+    <div class="client-card">
+      <div class="client-card-left" data-id="${c.id}" title="Alterar cor">
+        <div class="client-hair-swatch" style="background:${c.hairColor || '#888'}"></div>
+        <span class="client-color-name">${c.hairColorName || ''}</span>
+      </div>
+      <div class="client-card-right">
+        <div>
+          <div class="client-name" data-id="${c.id}" title="Ver histórico">${c.name}</div>
+          ${c.notes ? `<div class="client-notes">${c.notes}</div>` : ''}
+        </div>
+        <button class="client-del-btn" data-id="${c.id}" title="Remover">🗑</button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.client-del-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = clients.find(cl => cl.id === btn.dataset.id);
+      if (confirm(`Remover cliente "${c?.name}"?`)) {
+        clients = clients.filter(cl => cl.id !== btn.dataset.id);
+        save();
+        saveClientsToSheets();
+        renderClients();
+        renderClientSelector();
+        showToast('🗑 Cliente removido');
+      }
+    });
+  });
+
+  list.querySelectorAll('.client-card-left').forEach(el => {
+    el.addEventListener('click', (e) => {
+      openInlineColorPicker(el.dataset.id, el);
+      e.stopPropagation();
+    });
+  });
+
+  list.querySelectorAll('.client-name').forEach(el => {
+    el.addEventListener('click', () => openClientHistory(el.dataset.id));
+  });
+}
+
+// ── INLINE COLOR PICKER (on card) ──
+let _inlinePickerClientId = null;
+const _inlinePopup = document.getElementById('inlineColorPopup');
+
+function openInlineColorPicker(clientId, anchorEl) {
+  if (_inlinePickerClientId === clientId) {
+    closeInlineColorPicker();
+    return;
+  }
+  _inlinePickerClientId = clientId;
+  const client = clients.find(c => c.id === clientId);
+  const grid = document.getElementById('inlineColorGrid');
+  grid.innerHTML = hairColors.map(hc => `
+    <div class="inline-color-swatch${client?.hairColor === hc.hex ? ' selected' : ''}"
+         style="background:${hc.hex}"
+         data-hex="${hc.hex}"
+         data-name="${hc.name}"
+         title="${hc.name}"></div>
+  `).join('');
+  grid.querySelectorAll('.inline-color-swatch').forEach(sw => {
+    sw.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const c = clients.find(cl => cl.id === _inlinePickerClientId);
+      if (c) {
+        c.hairColor = sw.dataset.hex;
+        c.hairColorName = sw.dataset.name;
+        save();
+        saveClientsToSheets();
+        renderClients();
+        renderClientSelector();
+        showToast('✅ Cor atualizada!');
+      }
+      closeInlineColorPicker();
+    });
+  });
+
+  // Position popup below the anchor
+  const rect = anchorEl.getBoundingClientRect();
+  const popupW = 210;
+  let left = rect.left;
+  let top  = rect.bottom + 8 + window.scrollY;
+  if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+  _inlinePopup.style.left = left + 'px';
+  _inlinePopup.style.top  = top  + 'px';
+  _inlinePopup.classList.add('show');
+}
+
+function closeInlineColorPicker() {
+  _inlinePopup.classList.remove('show');
+  _inlinePickerClientId = null;
+}
+
+// ── CLIENT HISTORY ──
+function openClientHistory(clientId) {
+  const client = clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  document.getElementById('clientHistorySwatch').style.background = client.hairColor || '#888';
+  document.getElementById('clientHistoryName').textContent = client.name;
+  const subParts = [];
+  if (client.hairColorName) subParts.push(client.hairColorName);
+  if (client.notes) subParts.push(client.notes);
+  document.getElementById('clientHistorySub').textContent = subParts.join(' · ');
+
+  const clientEntries = entries
+    .filter(e => e.clientName === client.name)
+    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
+  const list = document.getElementById('clientHistoryList');
+  if (clientEntries.length === 0) {
+    list.innerHTML = `<div class="client-history-empty">📋<br>Sem entradas para esta cliente ainda.</div>`;
+  } else {
+    const totalSpent = clientEntries.reduce((s, e) => s + e.total, 0);
+    list.innerHTML =
+      `<div class="client-history-stats">
+        <span>${clientEntries.length} entrada${clientEntries.length !== 1 ? 's' : ''}</span>
+        <span class="client-history-total-badge">${fmt(totalSpent)}</span>
+      </div>` +
+      clientEntries.map(e => {
+        let adjBadge = '';
+        if (e.adjustment) {
+          const sign = e.adjustment.type === 'discount' ? '-' : '+';
+          adjBadge = `<span class="entry-adj-badge ${e.adjustment.type}">${sign}${fmt(e.adjustment.amount)}</span>`;
+        }
+        const [, m, d] = e.date.split('-');
+        const dateLabel = `${parseInt(d)} ${MONTHS_PT[parseInt(m) - 1].slice(0, 3)}`;
+        return `
+        <div class="entry-card">
+          <div class="entry-time">
+            <div class="time">${e.time}</div>
+            <div class="entry-date-small">${dateLabel}</div>
+          </div>
+          <div class="entry-info">
+            <div class="entry-services">${e.services.map(s => s.count > 1 ? `${s.name}\u00d7${s.count}` : s.name).join(' \u00b7 ')}</div>
+            ${e.nota ? `<div class="entry-nota">"${e.nota}"</div>` : ''}
+          </div>
+          <div class="entry-right">
+            ${adjBadge}
+            <div class="entry-value">${fmt(e.total)}</div>
+          </div>
+        </div>`;
+      }).join('');
+  }
+  document.getElementById('clientHistoryOverlay').classList.add('show');
+}
+
+document.addEventListener('click', (e) => {
+  if (_inlinePopup.classList.contains('show') &&
+      !_inlinePopup.contains(e.target)) {
+    closeInlineColorPicker();
+  }
+});
+
+function renderClientSelector() {
+  const sel = document.getElementById('caixaClientSelect');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = `<option value="">Cliente (opcional)...</option>` +
+    clients.map(c => `<option value="${c.id}"${c.id === current ? ' selected' : ''}>${c.name}</option>`).join('');
+}
+
+function openClientModal(editId) {
+  _editingClientId = editId || null;
+  const c = editId ? clients.find(cl => cl.id === editId) : null;
+  document.getElementById('clientModalTitle').textContent = c ? 'Editar Cliente' : 'Novo Cliente';
+  document.getElementById('clientModalName').value = c ? c.name : '';
+  document.getElementById('clientModalNotes').value = c ? (c.notes || '') : '';
+  const startColor = c ? hairColors.find(h => h.hex === c.hairColor) || { name: c.hairColorName, hex: c.hairColor } : hairColors[0];
+  _selectedHairColor = startColor;
+  // Reset add-color form
+  const form = document.getElementById('newColorForm');
+  form.classList.remove('show');
+  document.getElementById('newColorName').value = '';
+  document.querySelector('.hair-color-add')?.classList.remove('open');
+  renderHairColorGrid();
+  document.getElementById('clientModalOverlay').classList.add('show');
+  document.getElementById('clientModalName').focus();
+}
+
+function renderHairColorGrid() {
+  const grid = document.getElementById('hairColorGrid');
+  if (!grid) return;
+  grid.innerHTML = hairColors.map(hc => `
+    <div class="hair-color-swatch${hc.hex === _selectedHairColor?.hex ? ' selected' : ''}"
+         style="background:${hc.hex}"
+         data-hex="${hc.hex}"
+         data-name="${hc.name}"
+         title="${hc.name}"></div>
+  `).join('') + `<div class="hair-color-swatch hair-color-add" title="Criar nova cor">+</div>`;
+  grid.querySelectorAll('.hair-color-swatch:not(.hair-color-add)').forEach(sw => {
+    sw.addEventListener('click', () => {
+      _selectedHairColor = { name: sw.dataset.name, hex: sw.dataset.hex };
+      renderHairColorGrid();
+    });
+  });
+  grid.querySelector('.hair-color-add').addEventListener('click', () => {
+    const form = document.getElementById('newColorForm');
+    const btn  = grid.querySelector('.hair-color-add');
+    const open = form.classList.toggle('show');
+    btn.classList.toggle('open', open);
+    if (open) document.getElementById('newColorName').focus();
+  });
+}
+
+// ── ADD NEW COLOR FORM ──
+document.getElementById('newColorConfirm').addEventListener('click', () => {
+  const hex  = document.getElementById('newColorPicker').value;
+  const name = document.getElementById('newColorName').value.trim() || 'Cor ' + (hairColors.length + 1);
+  // Avoid duplicates by hex
+  if (!hairColors.find(h => h.hex === hex)) {
+    hairColors.push({ name, hex });
+    save();
+  }
+  _selectedHairColor = { name, hex };
+  document.getElementById('newColorForm').classList.remove('show');
+  document.getElementById('newColorName').value = '';
+  renderHairColorGrid();
+  showToast('✅ Cor adicionada!');
+});
+document.getElementById('newColorName').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('newColorConfirm').click();
+});
+
+// Client modal events
+document.getElementById('btnAddClient').addEventListener('click', () => openClientModal());
+document.getElementById('clientsSearch').addEventListener('input', () => renderClients());
+document.getElementById('clientModalCancel').addEventListener('click', () => {
+  document.getElementById('clientModalOverlay').classList.remove('show');
+});
+document.getElementById('clientModalOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('clientModalOverlay'))
+    document.getElementById('clientModalOverlay').classList.remove('show');
+});
+document.getElementById('clientHistoryClose').addEventListener('click', () => {
+  document.getElementById('clientHistoryOverlay').classList.remove('show');
+});
+document.getElementById('clientHistoryOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('clientHistoryOverlay'))
+    document.getElementById('clientHistoryOverlay').classList.remove('show');
+});
+document.getElementById('clientModalOk').addEventListener('click', () => {
+  const name = document.getElementById('clientModalName').value.trim();
+  if (!name) { showToast('⚠️ Insere o nome do cliente'); return; }
+  if (_editingClientId) {
+    const c = clients.find(cl => cl.id === _editingClientId);
+    if (c) {
+      c.name = name;
+      c.notes = document.getElementById('clientModalNotes').value.trim();
+      c.hairColor = _selectedHairColor?.hex || '#888';
+      c.hairColorName = _selectedHairColor?.name || '';
+    }
+  } else {
+    clients.push({
+      id: 'c' + Date.now(),
+      name,
+      notes: document.getElementById('clientModalNotes').value.trim(),
+      hairColor: _selectedHairColor?.hex || '#888',
+      hairColorName: _selectedHairColor?.name || '',
+      addedDate: today(),
+    });
+  }
+  save();
+  saveClientsToSheets();
+  document.getElementById('clientModalOverlay').classList.remove('show');
+  renderClients();
+  renderClientSelector();
+  showToast(_editingClientId ? '✅ Cliente atualizado!' : '✅ Cliente adicionado!');
+  _editingClientId = null;
+});
+
+// Clients Sheets sync
+async function saveClientsToSheets() {
+  if (!sheetsUrl) return;
+  try {
+    await fetch(sheetsUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveClients', clients }),
+    });
+  } catch (err) {
+    console.error('saveClientsToSheets error', err);
+  }
+}
+
+async function loadClientsFromSheets() {
+  if (!sheetsUrl) return;
+  try {
+    const res = await fetch(`${sheetsUrl}?action=getClients`);
+    if (!res.ok) return;
+    const sheetClients = await res.json();
+    if (!Array.isArray(sheetClients) || sheetClients.length === 0) return;
+    const seen = new Map();
+    sheetClients.forEach(c => seen.set(c.id, c));
+    clients = [...seen.values()];
+    save();
+    renderClients();
+    renderClientSelector();
+  } catch (err) {
+    console.error('loadClientsFromSheets error', err);
+  }
+}
+
 // ── GOOGLE SHEETS SYNC ──
 async function syncEntry(entry) {
   if (!sheetsUrl) return;
@@ -643,6 +1062,9 @@ async function syncEntry(entry) {
       services: entry.services.map(s => `${s.name}${s.count > 1 ? '×' + s.count : ''}`).join(', '),
       servicesJson: JSON.stringify(entry.services), // JSON completo para reconstrução
       total: entry.total,
+      baseTotal: entry.baseTotal || entry.total,
+      adjustment: entry.adjustment ? `${entry.adjustment.type === 'discount' ? '-' : '+'}${entry.adjustment.amount}` : '',
+      clientName: entry.clientName || '',
       nota: entry.nota || '',
     };
     await fetch(sheetsUrl, {
@@ -741,7 +1163,14 @@ async function loadFromSheets() {
         time: se.time,
         // Usa o array de serviços JSON se disponível; caso contrário, cria um genérico
         services: se.services || [{ id: 'restored', name: se.servicesLabel || 'Serviço', count: 1, subtotal: se.total }],
+        baseTotal: se.baseTotal || se.total,
+        adjustment: se.adjustment ? (() => {
+          if (se.adjustment.startsWith('-')) return { type: 'discount', amount: parseFloat(se.adjustment.slice(1)) };
+          if (se.adjustment.startsWith('+')) return { type: 'extra',    amount: parseFloat(se.adjustment.slice(1)) };
+          return null;
+        })() : null,
         total: se.total,
+        clientName: se.clientName || '',
         nota: se.nota || '',
         synced: true,
         restoredFromSheets: true,
@@ -780,6 +1209,7 @@ async function refreshData() {
     await Promise.all([
       loadServicesFromSheets(),
       loadFromSheets(),
+      loadClientsFromSheets(),
     ]);
     rerenderAll();
     renderServices();
@@ -826,8 +1256,10 @@ document.getElementById('deleteConfirmCancel').addEventListener('click', () => {
 
 // ── INIT ──
 renderServices();
+renderClientSelector();
 // Sincroniza com Sheets no arranque se o URL estiver configurado
 if (sheetsUrl) {
   loadServicesFromSheets(); // serviços têm prioridade sobre localStorage
   loadFromSheets();
+  loadClientsFromSheets();
 }
