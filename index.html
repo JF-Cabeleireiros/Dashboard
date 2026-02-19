@@ -31,7 +31,7 @@
 <div class="tabs">
   <div class="tab active" data-tab="caixa">💰 Caixa</div>
   <div class="tab" data-tab="clientes">👤 Clientes</div>
-  <div class="tab" data-tab="historico">📋 Hoje</div>
+  <div class="tab" data-tab="historico">📋 Registos</div>
   <div class="tab" data-tab="medias">📊 Médias</div>
   <div class="tab" data-tab="config">⚙️ Config</div>
 </div>
@@ -39,50 +39,70 @@
 <!-- ── CAIXA ── -->
 <div class="view active" id="view-caixa">
 
-  <div class="client-select-row">
-    <span class="client-select-icon">👤</span>
-    <select class="client-select-dropdown" id="caixaClientSelect">
-      <option value="">Cliente (opcional)...</option>
-    </select>
+  <div class="caixa-tab-row">
+    <button class="caixa-tab-btn active" data-tab="entradas">💰 Entradas</button>
+    <button class="caixa-tab-btn" data-tab="saidas">📤 Saídas</button>
   </div>
 
-  <div class="services-grid" id="servicesGrid"></div>
-
-  <div class="total-card">
-    <div>
-      <div class="total-label">Total da entrada</div>
-      <div class="total-value" id="totalValue">0,00 €</div>
-      <div class="total-adj-info" id="totalAdjInfo"></div>
-      <div class="total-services" id="totalServices">Nenhum serviço selecionado</div>
+  <!-- ── ENTRADAS PANEL ── -->
+  <div id="caixaEntradasPanel">
+    <div class="client-select-row">
+      <span class="client-select-icon">👤</span>
+      <select class="client-select-dropdown" id="caixaClientSelect">
+        <option value="">Cliente (opcional)...</option>
+      </select>
     </div>
-    <div style="text-align:right">
-      <div style="font-size:2rem">💇‍♀️</div>
-    </div>
-  </div>
 
-  <div class="adj-card" id="adjCard">
-    <div class="adj-header">
-      <span class="adj-label">Ajuste ao total</span>
-      <div class="adj-pills">
-        <button class="adj-pill active" data-adj="none">Nenhum</button>
-        <button class="adj-pill" data-adj="discount">💸 Desconto</button>
-        <button class="adj-pill" data-adj="extra">➕ Extra</button>
+    <div class="services-grid" id="servicesGrid"></div>
+
+    <div class="total-card">
+      <div>
+        <div class="total-label">Total da entrada</div>
+        <div class="total-value" id="totalValue">0,00 €</div>
+        <div class="total-adj-info" id="totalAdjInfo"></div>
+        <div class="total-services" id="totalServices">Nenhum serviço selecionado</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:2rem">💇‍♀️</div>
       </div>
     </div>
-    <div class="adj-amount-row" id="adjAmountRow" style="display:none">
-      <input class="adj-amount-input" id="adjAmountInput" type="number" min="0" step="0.5" placeholder="0,00">
-      <span class="adj-unit">€</span>
+
+    <div class="adj-card" id="adjCard">
+      <div class="adj-header">
+        <span class="adj-label">Ajuste ao total</span>
+        <div class="adj-pills">
+          <button class="adj-pill active" data-adj="none">Nenhum</button>
+          <button class="adj-pill" data-adj="discount">💸 Desconto</button>
+          <button class="adj-pill" data-adj="extra">➕ Extra</button>
+        </div>
+      </div>
+      <div class="adj-amount-row" id="adjAmountRow" style="display:none">
+        <input class="adj-amount-input" id="adjAmountInput" type="number" min="0" step="0.5" placeholder="0,00">
+        <span class="adj-unit">€</span>
+      </div>
+    </div>
+
+    <div class="nota-row">
+      <input class="nota-input" id="notaInput" placeholder="Observação (opcional)..." type="text" maxlength="80">
+    </div>
+
+    <div class="action-row">
+      <button class="btn-clear" id="btnClear">Limpar</button>
+      <button class="btn-register" id="btnRegister">Registar Entrada</button>
     </div>
   </div>
 
-  <div class="nota-row">
-    <input class="nota-input" id="notaInput" placeholder="Observação (opcional)..." type="text" maxlength="80">
+  <!-- ── SAÍDAS PANEL ── -->
+  <div id="caixaSaidasPanel" style="display:none">
+    <div class="expense-cat-grid" id="expenseCatGrid"></div>
+    <input class="saidas-input" id="expenseAmount" type="number" min="0" step="0.01" placeholder="Valor (€)">
+    <input class="saidas-input" id="expenseDescription" placeholder="Descrição (opcional)" maxlength="80">
+    <div class="action-row" style="margin-top:14px">
+      <button class="btn-clear" id="btnClearExpense">Limpar</button>
+      <button class="btn-register btn-register-expense" id="btnRegisterExpense">Registar Saída</button>
+    </div>
   </div>
 
-  <div class="action-row">
-    <button class="btn-clear" id="btnClear">Limpar</button>
-    <button class="btn-register" id="btnRegister">Registar Entrada</button>
-  </div>
 </div>
 
 <!-- ── CLIENTES ── -->
@@ -98,12 +118,43 @@
   <div id="clientesList"></div>
 </div>
 
-<!-- ── HISTÓRICO ── -->
+<!-- ── REGISTOS ── -->
 <div class="view" id="view-historico">
+
+  <!-- Search -->
+  <div class="reg-search-row">
+    <span class="reg-search-icon">🔍</span>
+    <input class="reg-search-input" id="regSearch" type="search" placeholder="Pesquisar registos...">
+  </div>
+
+  <!-- Type pills -->
+  <div class="reg-filter-row">
+    <div class="reg-pills">
+      <button class="reg-pill active" data-type="both">⇄ Ambos</button>
+      <button class="reg-pill" data-type="income">💰 Entradas</button>
+      <button class="reg-pill" data-type="expense">📤 Saídas</button>
+    </div>
+    <div class="reg-pills">
+      <button class="reg-range active" data-range="day">Dia</button>
+      <button class="reg-range" data-range="month">Mês</button>
+      <button class="reg-range" data-range="all">Tudo</button>
+    </div>
+  </div>
+
+  <!-- Date / Month picker -->
+  <div class="reg-date-row" id="regDateRow">
+    <input class="reg-date-input" id="regDateInput" type="date">
+  </div>
+  <div class="reg-date-row" id="regMonthRow" style="display:none">
+    <input class="reg-date-input" id="regMonthInput" type="month">
+  </div>
+
+  <!-- Summary header -->
   <div class="history-header">
-    <div class="history-title">Entradas de hoje</div>
+    <div class="history-title" id="regTitle">Hoje</div>
     <div class="history-total-badge" id="historyTotalBadge">0,00 €</div>
   </div>
+
   <div id="historyList"></div>
 </div>
 
@@ -118,30 +169,36 @@
         <select id="monthSelect"></select>
       </div>
 
+      <div class="stats-view-toggle">
+        <button class="sv-btn active" data-sv="income">💰 Entradas</button>
+        <button class="sv-btn" data-sv="expense">📤 Saídas</button>
+        <button class="sv-btn" data-sv="both">⇄ Ambos</button>
+      </div>
+
       <div class="stats-section">
         <div class="stats-section-title">Resumo</div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
           <div class="stat-card">
-            <div class="stat-label">Total do mês</div>
+            <div class="stat-label" id="statLabel1">Receitas do mês</div>
             <div class="stat-value" id="statTotal">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Média/dia</div>
+            <div class="stat-label" id="statLabel2">Média/dia</div>
             <div class="stat-value" id="statAvgDay">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Nº entradas</div>
+            <div class="stat-label" id="statLabel3">Nº entradas</div>
             <div class="stat-value" id="statEntries">—</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Média/entrada</div>
+            <div class="stat-label" id="statLabel4">Média/entrada</div>
             <div class="stat-value" id="statAvgEntry">—</div>
           </div>
         </div>
       </div>
 
       <div class="stats-section">
-        <div class="stats-section-title">Por serviço</div>
+        <div class="stats-section-title" id="statsBarTitle">Por serviço</div>
         <div id="serviceBars"></div>
       </div>
     </div>
@@ -255,6 +312,22 @@
       <button class="client-history-close" id="clientHistoryClose">✕</button>
     </div>
     <div id="clientHistoryList"></div>
+  </div>
+</div>
+
+<!-- Modal nova categoria de saída -->
+<div class="modal-overlay" id="newCatModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title">➕ Nova Categoria</div>
+    <div class="new-cat-emoji-row">
+      <button class="new-cat-emoji-btn" id="newCatEmojiBtn">📦</button>
+      <span class="new-cat-emoji-hint">Toca para escolher um emoji</span>
+    </div>
+    <input class="modal-input" id="newCatName" placeholder="Nome da categoria (ex: Limpeza)" maxlength="24">
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" id="newCatCancel">Cancelar</button>
+      <button class="btn-modal-ok" id="newCatOk">Adicionar</button>
+    </div>
   </div>
 </div>
 

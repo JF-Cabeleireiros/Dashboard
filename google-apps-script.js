@@ -14,6 +14,7 @@
 // ══════════════════════════════════════════════════════════════════
 
 const SHEET_NAME     = 'Entradas';  // Nome da folha onde ficam as entradas
+const EXPENSES_SHEET = 'Saídas';    // Nome da folha onde ficam as saídas
 const STATS_SHEET    = 'Resumo';    // Nome da folha de resumo (criada automaticamente)
 const SERVICES_SHEET = 'Serviços';  // Nome da folha dos serviços (editada pelo utilizador)
 const CLIENTS_SHEET  = 'Clientes';  // Nome da folha dos clientes
@@ -39,6 +40,14 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Ação de guardar categorias de despesas
+    if (data.action === 'saveExpenseCats') {
+      saveExpenseCatsData(data.expenseCats);
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: 'ok' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Ação de apagar entrada
     if (data.action === 'delete') {
       deleteEntry(data.entryId);
@@ -57,8 +66,12 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Ação padrão: adicionar entrada
-    appendEntry(data);
+    // Ação padrão: adicionar entrada (income ou expense)
+    if (data.type === 'expense') {
+      appendExpenseEntry(data);
+    } else {
+      appendEntry(data);
+    }
     updateSummary();
     return ContentService
       .createTextOutput(JSON.stringify({ status: 'ok' }))
@@ -153,58 +166,134 @@ function appendEntry(data) {
   }
 }
 
-// Apaga a linha da folha "Entradas" com o ID correspondente
+// Adiciona uma linha na folha "Saídas"
+function appendExpenseEntry(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(EXPENSES_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(EXPENSES_SHEET);
+    sheet.appendRow(['Data', 'Hora', 'Ícone', 'ID', 'Categoria', 'CatID', 'Valor (€)', 'Descrição']);
+    sheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.getRange('G:G').setNumberFormat('€#,##0.00');
+    sheet.setColumnWidth(1, 100);
+    sheet.setColumnWidth(2, 70);
+    sheet.setColumnWidth(3, 60);
+    sheet.setColumnWidth(4, 140);
+    sheet.setColumnWidth(5, 160);
+    sheet.setColumnWidth(6, 100);
+    sheet.setColumnWidth(7, 100);
+    sheet.setColumnWidth(8, 240);
+    sheet.hideColumns(4, 2); // oculta ID e CatID
+  }
+
+  sheet.appendRow([
+    data.date,
+    data.time,
+    data.catIcon || '📦',
+    data.id || '',
+    data.catName || 'Outro',
+    data.catId || '',
+    data.total,
+    data.description || '',
+  ]);
+
+  const expLastRow = sheet.getLastRow();
+  if (expLastRow % 2 === 0) {
+    sheet.getRange(expLastRow, 1, 1, 8).setBackground('#FFF8F6');
+  }
+}
 function deleteEntry(entryId) {
   if (!entryId) return;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return;
-
-  const data = sheet.getDataRange().getValues();
-  for (let i = data.length - 1; i >= 1; i--) {
-    // coluna F (índice 5) contém o ID
-    if (String(data[i][5]) === String(entryId)) {
-      sheet.deleteRow(i + 1); // deleteRow usa índice 1-based
-      return;
+  // Procura em Entradas
+  const incSheet = ss.getSheetByName(SHEET_NAME);
+  if (incSheet) {
+    const data = incSheet.getDataRange().getValues();
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][5]) === String(entryId)) {
+        incSheet.deleteRow(i + 1);
+        return;
+      }
+    }
+  }
+  // Procura em Saídas (col D = ID)
+  const expSheet = ss.getSheetByName(EXPENSES_SHEET);
+  if (expSheet) {
+    const data = expSheet.getDataRange().getValues();
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][3]) === String(entryId)) {
+        expSheet.deleteRow(i + 1);
+        return;
+      }
     }
   }
 }
 
 // Apaga TODAS as entradas da folha (mantém o cabeçalho)
 function deleteAllEntries() {
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return;
-  const lastRow = sheet.getLastRow();
-  if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  [SHEET_NAME, EXPENSES_SHEET].forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) sheet.deleteRows(2, lastRow - 1);
+  });
 }
 
 // Devolve todas as entradas (usada para sincronização inicial da webapp)
 function getAllData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) return [];
-
-  const data = sheet.getDataRange().getValues();
   const result = [];
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    let parsedServices = null;
-    try { parsedServices = row[6] ? JSON.parse(row[6]) : null; } catch (e) {}
-    result.push({
-      id: String(row[5] || i),
-      date: row[0],
-      time: row[1],
-      servicesLabel: row[2],  // string legível
-      services: parsedServices, // array de objetos ou null
-      total: parseFloat(row[3]) || 0,
-      nota: row[4] || '',
-      baseTotal: parseFloat(row[7]) || parseFloat(row[3]) || 0,
-      adjustment: row[8] ? String(row[8]) : '',
-      clientName: row[9] ? String(row[9]) : '',
-      synced: true,
-    });
+
+  // ── Entradas (income) ──
+  const incSheet = ss.getSheetByName(SHEET_NAME);
+  if (incSheet) {
+    const data = incSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      let parsedServices = null;
+      try { parsedServices = row[6] ? JSON.parse(row[6]) : null; } catch (e) {}
+      result.push({
+        id: String(row[5] || i),
+        date: row[0],
+        time: row[1],
+        servicesLabel: row[2],
+        services: parsedServices,
+        total: parseFloat(row[3]) || 0,
+        nota: row[4] || '',
+        baseTotal: parseFloat(row[7]) || parseFloat(row[3]) || 0,
+        adjustment: row[8] ? String(row[8]) : '',
+        clientName: row[9] ? String(row[9]) : '',
+        synced: true,
+      });
+    }
   }
+
+  // ── Saídas (expenses) ──
+  const expSheet = ss.getSheetByName(EXPENSES_SHEET);
+  if (expSheet) {
+    const data = expSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[3]) continue; // linha sem ID → ignora
+      result.push({
+        type: 'expense',
+        id: String(row[3]),
+        date: row[0],
+        time: row[1],
+        catIcon: String(row[2] || '📦'),
+        catName: String(row[4] || 'Outro'),
+        catId: String(row[5] || ''),
+        total: parseFloat(row[6]) || 0,
+        description: String(row[7] || ''),
+        services: [],
+        synced: true,
+      });
+    }
+  }
+
   return result;
 }
 
@@ -212,66 +301,78 @@ function getAllData() {
 function updateSummary() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let summarySheet = ss.getSheetByName(STATS_SHEET);
-
-  if (!summarySheet) {
-    summarySheet = ss.insertSheet(STATS_SHEET);
-  }
-
+  if (!summarySheet) summarySheet = ss.insertSheet(STATS_SHEET);
   summarySheet.clearContents();
 
-  const dataSheet = ss.getSheetByName(SHEET_NAME);
-  if (!dataSheet) return;
-
-  const data = dataSheet.getDataRange().getValues();
-  if (data.length <= 1) return;
-
-  // Agrupa por mês
-  const monthMap = {};
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const dateStr = row[0]; // YYYY-MM-DD
-    const total = parseFloat(row[3]) || 0;
-    const month = dateStr.slice(0, 7); // YYYY-MM
-    if (!monthMap[month]) {
-      monthMap[month] = { total: 0, entries: 0, days: new Set() };
+  // ── Agrupa entradas (income) por mês ──
+  const incMap = {};
+  const incSheet = ss.getSheetByName(SHEET_NAME);
+  if (incSheet) {
+    const data = incSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const dateStr = String(row[0]);
+      const total = parseFloat(row[3]) || 0;
+      const month = dateStr.slice(0, 7);
+      if (!month || month.length < 7) continue;
+      if (!incMap[month]) incMap[month] = { income: 0, entries: 0, days: new Set() };
+      incMap[month].income += total;
+      incMap[month].entries++;
+      incMap[month].days.add(dateStr);
     }
-    monthMap[month].total += total;
-    monthMap[month].entries++;
-    monthMap[month].days.add(dateStr);
   }
 
-  // Escreve resumo
-  summarySheet.appendRow(['Mês', 'Total (€)', 'Nº Entradas', 'Dias com trabalho', 'Média por dia (€)', 'Média por entrada (€)']);
-  summarySheet.getRange(1, 1, 1, 6).setFontWeight('bold');
+  // ── Agrupa saídas (expenses) por mês ──
+  const expSheet = ss.getSheetByName(EXPENSES_SHEET);
+  if (expSheet) {
+    const data = expSheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const dateStr = String(row[0]);
+      const total = parseFloat(row[6]) || 0;
+      const month = dateStr.slice(0, 7);
+      if (!month || month.length < 7) continue;
+      if (!incMap[month]) incMap[month] = { income: 0, entries: 0, days: new Set() };
+      incMap[month].expenses = (incMap[month].expenses || 0) + total;
+    }
+  }
 
-  const months = Object.keys(monthMap).sort().reverse();
+  // ── Escreve resumo ──
+  summarySheet.appendRow(['Mês', 'Receitas (€)', 'Despesas (€)', 'Saldo (€)', 'Nº Entradas', 'Dias c/ trabalho', 'Média/dia (€)', 'Média/entrada (€)']);
+  summarySheet.getRange(1, 1, 1, 8).setFontWeight('bold');
+
+  const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const months = Object.keys(incMap).sort().reverse();
   months.forEach(m => {
-    const d = monthMap[m];
-    const avgDay = d.days.size > 0 ? d.total / d.days.size : 0;
-    const avgEntry = d.entries > 0 ? d.total / d.entries : 0;
-
-    const [year, month] = m.split('-');
-    const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-    const label = `${monthNames[parseInt(month) - 1]} ${year}`;
-
-    summarySheet.appendRow([label, d.total, d.entries, d.days.size, avgDay, avgEntry]);
+    const d = incMap[m];
+    const expenses = d.expenses || 0;
+    const avgDay   = d.days.size > 0 ? d.income / d.days.size : 0;
+    const avgEntry = d.entries  > 0 ? d.income / d.entries    : 0;
+    const [year, mon] = m.split('-');
+    const label = `${monthNames[parseInt(mon) - 1]} ${year}`;
+    summarySheet.appendRow([label, d.income, expenses, d.income - expenses, d.entries, d.days.size, avgDay, avgEntry]);
   });
 
   // Formatar colunas de valores como moeda
   const lastRow = summarySheet.getLastRow();
   if (lastRow > 1) {
-    summarySheet.getRange(2, 2, lastRow - 1, 1).setNumberFormat('€#,##0.00');
-    summarySheet.getRange(2, 5, lastRow - 1, 2).setNumberFormat('€#,##0.00');
+    summarySheet.getRange(2, 2, lastRow - 1, 4).setNumberFormat('€#,##0.00'); // Receitas, Despesas, Saldo
+    summarySheet.getRange(2, 7, lastRow - 1, 2).setNumberFormat('€#,##0.00'); // Médias
+    // Colorir saldo: verde se positivo, vermelho se negativo
+    for (let r = 2; r <= lastRow; r++) {
+      const saldo = summarySheet.getRange(r, 4).getValue();
+      summarySheet.getRange(r, 4).setFontColor(saldo >= 0 ? '#1a7a4a' : '#c0392b');
+    }
   }
 
-  // Larguras
   summarySheet.setColumnWidth(1, 140);
-  summarySheet.setColumnWidth(2, 110);
-  summarySheet.setColumnWidth(3, 110);
-  summarySheet.setColumnWidth(4, 140);
-  summarySheet.setColumnWidth(5, 150);
-  summarySheet.setColumnWidth(6, 160);
-
+  summarySheet.setColumnWidth(2, 120);
+  summarySheet.setColumnWidth(3, 120);
+  summarySheet.setColumnWidth(4, 120);
+  summarySheet.setColumnWidth(5, 110);
+  summarySheet.setColumnWidth(6, 130);
+  summarySheet.setColumnWidth(7, 140);
+  summarySheet.setColumnWidth(8, 150);
   summarySheet.setFrozenRows(1);
 }
 // ── CLIENTES ───────────────────────────────────────────────────────────────────
@@ -329,6 +430,24 @@ function saveClientsData(clientsList) {
     sheet.appendRow([c.id, c.name, c.hairColor || '#888', c.hairColorName || '', c.notes || '', c.addedDate || '']);
   });
 }
+// ── EXPENSE CATEGORIES ────────────────────────────────────────────────────────
+
+// Guarda as categorias de despesas numa folha oculta (para persistência)
+function saveExpenseCatsData(catsList) {
+  if (!Array.isArray(catsList)) return;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetName = 'ExpenseCats';
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.hideSheet();
+  } else {
+    sheet.clearContents();
+  }
+  sheet.appendRow(['ID', 'Nome', 'Ícone']);
+  catsList.forEach(c => sheet.appendRow([c.id, c.name, c.icon || '📦']));
+}
+
 // ── SERVIÇOS ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICES_DATA = [

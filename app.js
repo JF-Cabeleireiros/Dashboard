@@ -40,6 +40,28 @@ const DEFAULT_HAIR_COLORS = [
 ];
 let hairColors = DB.get('hairColors', DEFAULT_HAIR_COLORS);
 
+// EXPENSE CATEGORIES
+const DEFAULT_EXPENSE_CATS = [
+  { id: 'ec1', name: 'Eletricidade', icon: '⚡' },
+  { id: 'ec2', name: 'Produtos',     icon: '🧪' },
+  { id: 'ec3', name: 'Aluguer',      icon: '🏠' },
+  { id: 'ec4', name: 'Água',          icon: '💧' },
+  { id: 'ec5', name: 'Internet',     icon: '📶' },
+];
+let expenseCats = DB.get('expenseCats', DEFAULT_EXPENSE_CATS);
+let _selectedExpenseCat = null; // id of selected cat
+let _caixaView = 'entradas'; // 'entradas' | 'saidas'
+
+// REGISTOS FILTER STATE
+let _histType   = 'both';          // 'both' | 'income' | 'expense'
+let _histRange  = 'day';           // 'day' | 'month' | 'all'
+let _histDate   = today();         // YYYY-MM-DD (used when range=day)
+let _histMonth  = today().slice(0,7); // YYYY-MM (used when range=month)
+let _histSearch = '';              // free-text filter
+
+// STATS VIEW
+let _statsView = 'income'; // 'income' | 'expense' | 'both'
+
 let _editingClientId = null;
 let _selectedHairColor = hairColors[0];
 
@@ -62,6 +84,7 @@ function save() {
   DB.set('sheetsUrl', sheetsUrl);
   DB.set('clients', clients);
   DB.set('hairColors', hairColors);
+  DB.set('expenseCats', expenseCats);
 }
 
 function showToast(msg, dur = 2000) {
@@ -266,16 +289,88 @@ function rerenderAll() {
 }
 
 function renderHistory() {
-  const todayEntries = entries.filter(e => e.date === today());
-  const totalToday = todayEntries.reduce((s, e) => s + e.total, 0);
-  document.getElementById('historyTotalBadge').textContent = fmt(totalToday);
+  // ── 1. Filter by date range ──
+  let pool;
+  if (_histRange === 'day') {
+    pool = entries.filter(e => e.date === _histDate);
+  } else if (_histRange === 'month') {
+    pool = entries.filter(e => e.date && e.date.startsWith(_histMonth));
+  } else {
+    pool = [...entries];
+  }
 
+  // ── 2. Filter by type ──
+  if (_histType === 'income')  pool = pool.filter(e => e.type !== 'expense');
+  if (_histType === 'expense') pool = pool.filter(e => e.type === 'expense');
+
+  // ── 3. Filter by search text ──
+  const q = _histSearch.toLowerCase();
+  if (q) {
+    pool = pool.filter(e => {
+      const parts = [
+        e.clientName || '',
+        e.nota || '',
+        e.description || '',
+        e.catName || '',
+        ...(e.services || []).map(s => s.name || ''),
+      ];
+      return parts.some(p => p.toLowerCase().includes(q));
+    });
+  }
+
+  // ── 4. Sort most-recent first ──
+  pool.sort((a, b) => {
+    const da = (a.date || '') + 'T' + (a.time || '00:00');
+    const db = (b.date || '') + 'T' + (b.time || '00:00');
+    return db.localeCompare(da);
+  });
+
+  // ── 5. Badge ──
+  const incTotal = pool.filter(e => e.type !== 'expense').reduce((s, e) => s + e.total, 0);
+  const expTotal = pool.filter(e => e.type === 'expense').reduce((s, e) => s + e.total, 0);
+  const net = incTotal - expTotal;
+  const badge = document.getElementById('historyTotalBadge');
+  badge.textContent = fmt(net);
+  badge.classList.toggle('badge-negative', net < 0 && expTotal > 0);
+
+  // ── 6. Title ──
+  const titleEl = document.getElementById('regTitle');
+  if (titleEl) {
+    if (_histRange === 'day') {
+      titleEl.textContent = _histDate === today() ? 'Hoje' : _histDate;
+    } else if (_histRange === 'month') {
+      const [y, m] = _histMonth.split('-');
+      titleEl.textContent = `${MONTHS_PT[parseInt(m)-1]} ${y}`;
+    } else {
+      titleEl.textContent = `Todos os registos (${pool.length})`;
+    }
+  }
+
+  // ── 7. Render list ──
   const list = document.getElementById('historyList');
-  if (todayEntries.length === 0) {
-    list.innerHTML = `<div class="history-empty"><div class="big">📋</div>Sem entradas hoje ainda.</div>`;
+  if (pool.length === 0) {
+    list.innerHTML = `<div class="history-empty"><div class="big">📋</div>Sem registos para mostrar.</div>`;
     return;
   }
-  list.innerHTML = todayEntries.map(e => {
+
+  const showDate = _histRange !== 'day';
+
+  list.innerHTML = pool.map(e => {
+    const dateBadge = showDate ? `<div class="entry-date-small">${e.date}</div>` : '';
+    if (e.type === 'expense') {
+      return `
+      <div class="entry-card expense-entry-card">
+        <div class="entry-time"><div class="time">${e.time}</div>${dateBadge}</div>
+        <div class="entry-info">
+          <div class="expense-cat-badge">${e.catIcon || '📤'} ${e.catName || 'Saída'}</div>
+          ${e.description ? `<div class="entry-nota">${e.description}</div>` : ''}
+        </div>
+        <div class="entry-right">
+          <div class="entry-value expense-value">-${fmt(e.total)}</div>
+        </div>
+        <button class="entry-delete" data-id="${e.id}">🗑</button>
+      </div>`;
+    }
     let adjBadge = '';
     if (e.adjustment) {
       const sign = e.adjustment.type === 'discount' ? '-' : '+';
@@ -283,10 +378,10 @@ function renderHistory() {
     }
     return `
     <div class="entry-card">
-      <div class="entry-time"><div class="time">${e.time}</div></div>
+      <div class="entry-time"><div class="time">${e.time}</div>${dateBadge}</div>
       <div class="entry-info">
         ${e.clientName ? `<div class="entry-client">👤 ${e.clientName}</div>` : ''}
-        <div class="entry-services">${e.services.map(s => s.count > 1 ? `${s.name}×${s.count}` : s.name).join(' · ')}</div>
+        <div class="entry-services">${(e.services||[]).map(s => s.count > 1 ? `${s.name}×${s.count}` : s.name).join(' · ')}</div>
         ${e.nota ? `<div class="entry-nota">"${e.nota}"</div>` : ''}
       </div>
       <div class="entry-right">
@@ -294,8 +389,7 @@ function renderHistory() {
         <div class="entry-value">${fmt(e.total)}</div>
       </div>
       <button class="entry-delete" data-id="${e.id}">🗑</button>
-    </div>
-  `;
+    </div>`;
   }).join('');
 
   list.querySelectorAll('.entry-delete').forEach(btn => {
@@ -304,7 +398,6 @@ function renderHistory() {
         const entry = entries.find(e => e.id === btn.dataset.id);
         entries = entries.filter(e => e.id !== btn.dataset.id);
         save();
-        // Propaga apagar para o Google Sheets
         if (entry && entry.synced) deleteFromSheets(entry.id);
         rerenderAll();
         showToast('🗑 Entrada apagada');
@@ -472,10 +565,14 @@ function _drawChartBase(ctx, W, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH, maxV
   }
 }
 
-function _drawLineAndFill(ctx, totals, xOf, yOf, PAD_T, PAD_B, chartH, n) {
+function _drawLineAndFill(ctx, totals, xOf, yOf, PAD_T, PAD_B, chartH, n, opts) {
+  opts = opts || {};
+  const lineColor  = opts.lineColor  || '#2C7873';
+  const fillStart  = opts.fillStart  || 'rgba(44,120,115,0.25)';
+  const fillEnd    = opts.fillEnd    || 'rgba(44,120,115,0.02)';
   const grad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + chartH);
-  grad.addColorStop(0, 'rgba(44,120,115,0.25)');
-  grad.addColorStop(1, 'rgba(44,120,115,0.02)');
+  grad.addColorStop(0, fillStart);
+  grad.addColorStop(1, fillEnd);
   ctx.beginPath();
   ctx.moveTo(xOf(0), yOf(totals[0]));
   for (let i = 1; i < n; i++) ctx.lineTo(xOf(i), yOf(totals[i]));
@@ -487,50 +584,66 @@ function _drawLineAndFill(ctx, totals, xOf, yOf, PAD_T, PAD_B, chartH, n) {
   ctx.beginPath();
   ctx.moveTo(xOf(0), yOf(totals[0]));
   for (let i = 1; i < n; i++) ctx.lineTo(xOf(i), yOf(totals[i]));
-  ctx.strokeStyle = '#2C7873';
+  ctx.strokeStyle = lineColor;
   ctx.lineWidth = 2.5;
   ctx.lineJoin = 'round';
   ctx.stroke();
 }
 
 function _drawYearChart(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH) {
-  const totals = Array(12).fill(0);
+  const n = 12;
+  const incTotals = Array(n).fill(0);
+  const expTotals = Array(n).fill(0);
   entries.forEach(e => {
     const [ey, em] = e.date.split('-');
-    if (parseInt(ey) === _chartYear) totals[parseInt(em) - 1] += e.total;
+    if (parseInt(ey) !== _chartYear) return;
+    const mi = parseInt(em) - 1;
+    if (e.type === 'expense') expTotals[mi] += e.total;
+    else incTotals[mi] += e.total;
   });
 
-  const maxVal = Math.max(...totals, 1);
+  const showInc = _statsView !== 'expense';
+  const showExp = _statsView !== 'income';
+  const activeTotals = _statsView === 'expense' ? expTotals : incTotals;
+  const maxVal = _statsView === 'both'
+    ? Math.max(...incTotals, ...expTotals, 1)
+    : Math.max(...activeTotals, 1);
+
   const xOf = i => PAD_L + (i / 11) * chartW;
   const yOf = v => PAD_T + chartH - (v / maxVal) * chartH;
 
   _drawChartBase(ctx, W, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH, maxVal);
-  _drawLineAndFill(ctx, totals, xOf, yOf, PAD_T, PAD_B, chartH, 12);
+  if (showExp) _drawLineAndFill(ctx, expTotals, xOf, yOf, PAD_T, PAD_B, chartH, n,
+    { lineColor: '#C05000', fillStart: 'rgba(192,80,0,0.18)', fillEnd: 'rgba(192,80,0,0.02)' });
+  if (showInc) _drawLineAndFill(ctx, incTotals, xOf, yOf, PAD_T, PAD_B, chartH, n,
+    { lineColor: '#2C7873', fillStart: 'rgba(44,120,115,0.25)', fillEnd: 'rgba(44,120,115,0.02)' });
 
   // X labels
   ctx.fillStyle = '#6b6560';
   ctx.font = `10px "DM Sans", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let i = 0; i < 12; i++)
+  for (let i = 0; i < n; i++)
     ctx.fillText(SHORT_MONTHS[i], xOf(i), PAD_T + chartH + 8);
 
-  // Dots
+  // Dots on primary line
+  const dotsData  = _statsView === 'expense' ? expTotals : incTotals;
+  const dotActive = _statsView === 'expense' ? '#C05000' : '#2C7873';
   const selYear  = _selectedMonth ? parseInt(_selectedMonth.split('-')[0]) : null;
   const selMonth = _selectedMonth ? parseInt(_selectedMonth.split('-')[1]) - 1 : null;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < n; i++) {
     const isSel = selYear === _chartYear && selMonth === i;
-    const x = xOf(i), y = yOf(totals[i]);
+    const x = xOf(i), y = yOf(dotsData[i]);
     ctx.beginPath();
     ctx.arc(x, y, isSel ? 6 : 4, 0, Math.PI * 2);
-    ctx.fillStyle   = isSel ? '#C05000' : (totals[i] > 0 ? '#2C7873' : '#d0cdc9');
+    ctx.fillStyle   = isSel ? '#8B1A00' : (dotsData[i] > 0 ? dotActive : '#d0cdc9');
     ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-    if (isSel && totals[i] > 0) {
-      ctx.fillStyle = '#C05000';
+    if (isSel && dotsData[i] > 0) {
+      ctx.fillStyle = '#8B1A00';
       ctx.font = `bold 11px "DM Sans", sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(fmt(totals[i]), x, y - 10);
+      ctx.fillText(fmt(dotsData[i]), x, y - 10);
     }
   }
 }
@@ -539,22 +652,32 @@ function _drawMonthChart(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH) 
   const monthKey = _selectedMonth || dateKey(today());
   const [y, m] = monthKey.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
+  const n = daysInMonth;
 
-  const totals = Array(daysInMonth).fill(0);
+  const incTotals = Array(n).fill(0);
+  const expTotals = Array(n).fill(0);
   entries.forEach(e => {
-    if (dateKey(e.date) === monthKey) {
-      const day = parseInt(e.date.split('-')[2]) - 1;
-      totals[day] += e.total;
-    }
+    if (dateKey(e.date) !== monthKey) return;
+    const day = parseInt(e.date.split('-')[2]) - 1;
+    if (e.type === 'expense') expTotals[day] += e.total;
+    else incTotals[day] += e.total;
   });
 
-  const maxVal = Math.max(...totals, 1);
-  const n = daysInMonth;
+  const showInc = _statsView !== 'expense';
+  const showExp = _statsView !== 'income';
+  const activeTotals = _statsView === 'expense' ? expTotals : incTotals;
+  const maxVal = _statsView === 'both'
+    ? Math.max(...incTotals, ...expTotals, 1)
+    : Math.max(...activeTotals, 1);
+
   const xOf = i => PAD_L + (n === 1 ? chartW / 2 : (i / (n - 1)) * chartW);
   const yOf = v => PAD_T + chartH - (v / maxVal) * chartH;
 
   _drawChartBase(ctx, W, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH, maxVal);
-  _drawLineAndFill(ctx, totals, xOf, yOf, PAD_T, PAD_B, chartH, n);
+  if (showExp) _drawLineAndFill(ctx, expTotals, xOf, yOf, PAD_T, PAD_B, chartH, n,
+    { lineColor: '#C05000', fillStart: 'rgba(192,80,0,0.18)', fillEnd: 'rgba(192,80,0,0.02)' });
+  if (showInc) _drawLineAndFill(ctx, incTotals, xOf, yOf, PAD_T, PAD_B, chartH, n,
+    { lineColor: '#2C7873', fillStart: 'rgba(44,120,115,0.25)', fillEnd: 'rgba(44,120,115,0.02)' });
 
   // X labels — show every 5 days + last
   ctx.fillStyle = '#6b6560';
@@ -567,58 +690,102 @@ function _drawMonthChart(ctx, W, H, PAD_L, PAD_R, PAD_T, PAD_B, chartW, chartH) 
       ctx.fillText(day, xOf(i), PAD_T + chartH + 8);
   }
 
-  // Dots — highlight today if in current month
+  // Dots on primary line
   const todayStr = today();
   const todayKey = dateKey(todayStr);
   const todayDay = parseInt(todayStr.split('-')[2]) - 1;
+  const dotsData  = _statsView === 'expense' ? expTotals : incTotals;
+  const dotActive = _statsView === 'expense' ? '#C05000' : '#2C7873';
   for (let i = 0; i < n; i++) {
     const isSel = todayKey === monthKey && i === todayDay;
-    const x = xOf(i), y2 = yOf(totals[i]);
+    const x = xOf(i), y2 = yOf(dotsData[i]);
     ctx.beginPath();
-    ctx.arc(x, y2, isSel ? 6 : totals[i] > 0 ? 4 : 3, 0, Math.PI * 2);
-    ctx.fillStyle   = isSel ? '#C05000' : (totals[i] > 0 ? '#2C7873' : '#d0cdc9');
+    ctx.arc(x, y2, isSel ? 6 : dotsData[i] > 0 ? 4 : 3, 0, Math.PI * 2);
+    ctx.fillStyle   = isSel ? '#8B1A00' : (dotsData[i] > 0 ? dotActive : '#d0cdc9');
     ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
-    if (isSel && totals[i] > 0) {
-      ctx.fillStyle = '#C05000';
+    if (isSel && dotsData[i] > 0) {
+      ctx.fillStyle = '#8B1A00';
       ctx.font = `bold 11px "DM Sans", sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(fmt(totals[i]), x, y2 - 10);
+      ctx.fillText(fmt(dotsData[i]), x, y2 - 10);
     }
   }
 }
 
 function calcStats(monthKey) {
-  const monthEntries = entries.filter(e => dateKey(e.date) === monthKey);
-  const total = monthEntries.reduce((s, e) => s + e.total, 0);
-  const days = [...new Set(monthEntries.map(e => e.date))].length;
-  const count = monthEntries.length;
+  const allMonth     = entries.filter(e => dateKey(e.date) === monthKey);
+  const incomeEntries  = allMonth.filter(e => e.type !== 'expense');
+  const expenseEntries = allMonth.filter(e => e.type === 'expense');
 
-  document.getElementById('statTotal').textContent = fmt(total);
-  document.getElementById('statAvgDay').textContent = days ? fmt(total / days) : '—';
-  document.getElementById('statEntries').textContent = count;
-  document.getElementById('statAvgEntry').textContent = count ? fmt(total / count) : '—';
+  const sl1 = document.getElementById('statLabel1');
+  const sl2 = document.getElementById('statLabel2');
+  const sl3 = document.getElementById('statLabel3');
+  const sl4 = document.getElementById('statLabel4');
+  const barTitle = document.getElementById('statsBarTitle');
 
+  if (_statsView === 'income') {
+    const total = incomeEntries.reduce((s, e) => s + e.total, 0);
+    const days  = [...new Set(incomeEntries.map(e => e.date))].length;
+    const count = incomeEntries.length;
+    if (sl1) sl1.textContent = 'Receitas do mês';
+    if (sl2) sl2.textContent = 'Média/dia';
+    if (sl3) sl3.textContent = 'Nº entradas';
+    if (sl4) sl4.textContent = 'Média/entrada';
+    document.getElementById('statTotal').textContent = fmt(total);
+    document.getElementById('statAvgDay').textContent = days ? fmt(total / days) : '—';
+    document.getElementById('statEntries').textContent = count;
+    document.getElementById('statAvgEntry').textContent = count ? fmt(total / count) : '—';
+    if (barTitle) barTitle.textContent = 'Por serviço';
+    _renderServiceBars(incomeEntries);
+  } else if (_statsView === 'expense') {
+    const total = expenseEntries.reduce((s, e) => s + e.total, 0);
+    const count = expenseEntries.length;
+    if (sl1) sl1.textContent = 'Despesas do mês';
+    if (sl2) sl2.textContent = '—';
+    if (sl3) sl3.textContent = 'Nº saídas';
+    if (sl4) sl4.textContent = 'Média/saída';
+    document.getElementById('statTotal').textContent = fmt(total);
+    document.getElementById('statAvgDay').textContent = '—';
+    document.getElementById('statEntries').textContent = count;
+    document.getElementById('statAvgEntry').textContent = count ? fmt(total / count) : '—';
+    if (barTitle) barTitle.textContent = 'Por categoria';
+    _renderExpenseBars(expenseEntries);
+  } else { // both
+    const incTotal = incomeEntries.reduce((s, e)  => s + e.total, 0);
+    const expTotal = expenseEntries.reduce((s, e) => s + e.total, 0);
+    const net = incTotal - expTotal;
+    const incDays = [...new Set(incomeEntries.map(e => e.date))].length;
+    if (sl1) sl1.textContent = 'Receitas';
+    if (sl2) sl2.textContent = 'Despesas';
+    if (sl3) sl3.textContent = 'Saldo líquido';
+    if (sl4) sl4.textContent = 'Dias trabalhados';
+    document.getElementById('statTotal').textContent = fmt(incTotal);
+    document.getElementById('statAvgDay').textContent = fmt(expTotal);
+    document.getElementById('statEntries').textContent = fmt(net);
+    document.getElementById('statAvgEntry').textContent = incDays;
+    if (barTitle) barTitle.textContent = 'Por serviço';
+    _renderServiceBars(incomeEntries);
+  }
+}
+
+function _renderServiceBars(incomeEntries) {
   const svcMap = {};
-  monthEntries.forEach(e => {
-    e.services.forEach(s => {
+  incomeEntries.forEach(e => {
+    (e.services || []).forEach(s => {
       const sub = parseFloat(s.subtotal) || 0;
       if (!s.name) return;
       if (!svcMap[s.name]) svcMap[s.name] = 0;
       svcMap[s.name] += sub;
     });
   });
-
-  // Remove zero/NaN entries and compute max
   Object.keys(svcMap).forEach(k => { if (!svcMap[k]) delete svcMap[k]; });
   const maxVal = Math.max(...Object.values(svcMap).filter(isFinite), 1);
   const bars = document.getElementById('serviceBars');
-
   if (Object.keys(svcMap).length === 0) {
     bars.innerHTML = `<div style="text-align:center;padding:20px;color:var(--gray);font-size:0.9rem;">Sem dados para este mês.</div>`;
     return;
   }
-
   bars.innerHTML = Object.entries(svcMap)
     .sort((a, b) => b[1] - a[1])
     .map(([name, val]) => `
@@ -629,6 +796,34 @@ function calcStats(monthKey) {
         </div>
         <div class="service-bar-bg">
           <div class="service-bar-fill" style="width:${Math.round(val / maxVal * 100)}%"></div>
+        </div>
+      </div>
+    `).join('');
+}
+
+function _renderExpenseBars(expenseEntries) {
+  const catMap = {};
+  expenseEntries.forEach(e => {
+    const key = e.catName || 'Outro';
+    if (!catMap[key]) catMap[key] = 0;
+    catMap[key] += e.total;
+  });
+  const maxVal = Math.max(...Object.values(catMap).filter(isFinite), 1);
+  const bars = document.getElementById('serviceBars');
+  if (Object.keys(catMap).length === 0) {
+    bars.innerHTML = `<div style="text-align:center;padding:20px;color:var(--gray);font-size:0.9rem;">Sem saídas neste mês.</div>`;
+    return;
+  }
+  bars.innerHTML = Object.entries(catMap)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, val]) => `
+      <div class="service-bar-row">
+        <div class="service-bar-header">
+          <span class="service-bar-name">${name}</span>
+          <span class="service-bar-val expense-bar-val">${fmt(val)}</span>
+        </div>
+        <div class="service-bar-bg">
+          <div class="service-bar-fill expense-bar-fill" style="width:${Math.round(val / maxVal * 100)}%"></div>
         </div>
       </div>
     `).join('');
@@ -680,6 +875,7 @@ document.getElementById('btnSaveSettings').addEventListener('click', () => {
     entries.filter(e => !e.synced).forEach(syncEntry);
     saveServicesToSheets();  // sincroniza serviços editados
     saveClientsToSheets();   // sincroniza clientes
+    saveExpenseCatsToSheets(); // sincroniza categorias de despesas
     loadFromSheets();        // sincroniza entradas existentes no Sheets
     loadClientsFromSheets(); // sincroniza clientes existentes no Sheets
   }
@@ -1055,18 +1251,33 @@ async function loadClientsFromSheets() {
 async function syncEntry(entry) {
   if (!sheetsUrl) return;
   try {
-    const payload = {
-      id: entry.id,                       // ID único para sincronização e apagar
-      date: entry.date,
-      time: entry.time,
-      services: entry.services.map(s => `${s.name}${s.count > 1 ? '×' + s.count : ''}`).join(', '),
-      servicesJson: JSON.stringify(entry.services), // JSON completo para reconstrução
-      total: entry.total,
-      baseTotal: entry.baseTotal || entry.total,
-      adjustment: entry.adjustment ? `${entry.adjustment.type === 'discount' ? '-' : '+'}${entry.adjustment.amount}` : '',
-      clientName: entry.clientName || '',
-      nota: entry.nota || '',
-    };
+    let payload;
+    if (entry.type === 'expense') {
+      payload = {
+        type: 'expense',
+        id: entry.id,
+        date: entry.date,
+        time: entry.time,
+        catId: entry.catId || '',
+        catName: entry.catName || 'Outro',
+        catIcon: entry.catIcon || '📦',
+        total: entry.total,
+        description: entry.description || '',
+      };
+    } else {
+      payload = {
+        id: entry.id,
+        date: entry.date,
+        time: entry.time,
+        services: entry.services.map(s => `${s.name}${s.count > 1 ? '×' + s.count : ''}`).join(', '),
+        servicesJson: JSON.stringify(entry.services),
+        total: entry.total,
+        baseTotal: entry.baseTotal || entry.total,
+        adjustment: entry.adjustment ? `${entry.adjustment.type === 'discount' ? '-' : '+'}${entry.adjustment.amount}` : '',
+        clientName: entry.clientName || '',
+        nota: entry.nota || '',
+      };
+    }
     await fetch(sheetsUrl, {
       method: 'POST',
       mode: 'no-cors',
@@ -1140,6 +1351,21 @@ function saveServicesToSheets() {
   }, 600); // aguarda 600 ms antes de enviar
 }
 
+// Guarda as categorias de despesas no Google Sheets
+async function saveExpenseCatsToSheets() {
+  if (!sheetsUrl) return;
+  try {
+    await fetch(sheetsUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'saveExpenseCats', expenseCats }),
+    });
+  } catch (err) {
+    console.error('saveExpenseCatsToSheets error', err);
+  }
+}
+
 // Carrega TODAS as entradas do Google Sheets e faz merge com localStorage
 let _justDeletedAll = false;
 async function loadFromSheets() {
@@ -1156,25 +1382,43 @@ async function loadFromSheets() {
 
     sheetEntries.forEach(se => {
       if (!se.id || localIds.has(se.id)) return; // já existe localmente → ignora
-      // Reconstrói o objeto de entrada completo
-      const restored = {
-        id: se.id,
-        date: se.date,
-        time: se.time,
-        // Usa o array de serviços JSON se disponível; caso contrário, cria um genérico
-        services: se.services || [{ id: 'restored', name: se.servicesLabel || 'Serviço', count: 1, subtotal: se.total }],
-        baseTotal: se.baseTotal || se.total,
-        adjustment: se.adjustment ? (() => {
-          if (se.adjustment.startsWith('-')) return { type: 'discount', amount: parseFloat(se.adjustment.slice(1)) };
-          if (se.adjustment.startsWith('+')) return { type: 'extra',    amount: parseFloat(se.adjustment.slice(1)) };
-          return null;
-        })() : null,
-        total: se.total,
-        clientName: se.clientName || '',
-        nota: se.nota || '',
-        synced: true,
-        restoredFromSheets: true,
-      };
+      let restored;
+      if (se.type === 'expense') {
+        restored = {
+          id: se.id,
+          type: 'expense',
+          date: se.date,
+          time: se.time,
+          catId: se.catId || '',
+          catName: se.catName || 'Outro',
+          catIcon: se.catIcon || '📦',
+          total: se.total,
+          description: se.description || '',
+          services: [],
+          synced: true,
+          restoredFromSheets: true,
+        };
+      } else {
+        // Reconstrói o objeto de entrada completo
+        restored = {
+          id: se.id,
+          date: se.date,
+          time: se.time,
+          // Usa o array de serviços JSON se disponível; caso contrário, cria um genérico
+          services: se.services || [{ id: 'restored', name: se.servicesLabel || 'Serviço', count: 1, subtotal: se.total }],
+          baseTotal: se.baseTotal || se.total,
+          adjustment: se.adjustment ? (() => {
+            if (se.adjustment.startsWith('-')) return { type: 'discount', amount: parseFloat(se.adjustment.slice(1)) };
+            if (se.adjustment.startsWith('+')) return { type: 'extra',    amount: parseFloat(se.adjustment.slice(1)) };
+            return null;
+          })() : null,
+          total: se.total,
+          clientName: se.clientName || '',
+          nota: se.nota || '',
+          synced: true,
+          restoredFromSheets: true,
+        };
+      }
       entries.push(restored);
       localIds.add(se.id);
       added++;
@@ -1254,7 +1498,214 @@ document.getElementById('deleteConfirmCancel').addEventListener('click', () => {
   document.getElementById('deleteConfirmOverlay').classList.remove('show');
 });
 
-// ── INIT ──
+// ── EXPENSE MODAL ──
+function renderExpenseCatGrid() {
+  const grid = document.getElementById('expenseCatGrid');
+  if (!grid) return;
+  grid.innerHTML = expenseCats.map(c => `
+    <button class="expense-cat-btn${_selectedExpenseCat === c.id ? ' selected' : ''}" data-id="${c.id}">
+      <span>${c.icon}</span><span>${c.name}</span>
+    </button>
+  `).join('') + `<button class="expense-cat-btn expense-cat-add" id="expenseCatAdd">＋ Nova</button>`;
+
+  grid.querySelectorAll('.expense-cat-btn:not(.expense-cat-add)').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _selectedExpenseCat = btn.dataset.id;
+      renderExpenseCatGrid();
+    });
+  });
+  document.getElementById('expenseCatAdd')?.addEventListener('click', () => openNewCatModal());
+}
+
+// ── NEW CATEGORY MODAL ──
+let _newCatEmoji = '📦';
+const EMOJI_PICKER_LIST = [
+  '📦','🔧','🧾','💻','📋','💡','🔌','🚰',
+  '🧹','🧴','🛒','📦','🌿','🚗','📞','⚙️',
+  '🏠','🏢','🔑','💊','💰','🎁','📅','📌',
+];
+
+function openNewCatModal() {
+  _newCatEmoji = '📦';
+  document.getElementById('newCatEmojiBtn').textContent = _newCatEmoji;
+  document.getElementById('newCatName').value = '';
+  _renderEmojiPicker();
+  document.getElementById('newCatModalOverlay').classList.add('show');
+  setTimeout(() => document.getElementById('newCatName').focus(), 120);
+}
+
+function _renderEmojiPicker() {
+  const btn = document.getElementById('newCatEmojiBtn');
+  // Remove existing picker if any
+  const existing = document.getElementById('emojiPickerPopup');
+  if (existing) existing.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'emojiPickerPopup';
+  popup.className = 'emoji-picker-popup';
+  EMOJI_PICKER_LIST.forEach(em => {
+    const b = document.createElement('button');
+    b.className = 'emoji-pick-btn' + (em === _newCatEmoji ? ' selected' : '');
+    b.textContent = em;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _newCatEmoji = em;
+      btn.textContent = em;
+      popup.querySelectorAll('.emoji-pick-btn').forEach(x => x.classList.remove('selected'));
+      b.classList.add('selected');
+    });
+    popup.appendChild(b);
+  });
+  btn.parentElement.appendChild(popup);
+}
+
+document.getElementById('newCatEmojiBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const existing = document.getElementById('emojiPickerPopup');
+  if (existing) { existing.remove(); return; }
+  _renderEmojiPicker();
+});
+document.getElementById('newCatCancel').addEventListener('click', () => {
+  document.getElementById('emojiPickerPopup')?.remove();
+  document.getElementById('newCatModalOverlay').classList.remove('show');
+});
+document.getElementById('newCatModalOverlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('newCatModalOverlay')) {
+    document.getElementById('emojiPickerPopup')?.remove();
+    document.getElementById('newCatModalOverlay').classList.remove('show');
+  }
+});
+document.getElementById('newCatOk').addEventListener('click', () => {
+  const name = document.getElementById('newCatName').value.trim();
+  if (!name) { showToast('⚠️ Insere um nome para a categoria'); return; }
+  const id = 'ec' + Date.now();
+  expenseCats.push({ id, name, icon: _newCatEmoji });
+  save();
+  saveExpenseCatsToSheets();
+  _selectedExpenseCat = id;
+  renderExpenseCatGrid();
+  document.getElementById('emojiPickerPopup')?.remove();
+  document.getElementById('newCatModalOverlay').classList.remove('show');
+  showToast('✅ Categoria adicionada!');
+});
+
+// ── REGISTOS FILTER HANDLERS ──
+(function initRegistosHandlers() {
+  // Initialise date inputs to today / current month
+  const di = document.getElementById('regDateInput');
+  const mi = document.getElementById('regMonthInput');
+  if (di) di.value = _histDate;
+  if (mi) mi.value = _histMonth;
+
+  document.querySelectorAll('.reg-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _histType = btn.dataset.type;
+      document.querySelectorAll('.reg-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderHistory();
+    });
+  });
+
+  document.querySelectorAll('.reg-range').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _histRange = btn.dataset.range;
+      document.querySelectorAll('.reg-range').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('regDateRow').style.display  = _histRange === 'day'   ? '' : 'none';
+      document.getElementById('regMonthRow').style.display = _histRange === 'month' ? '' : 'none';
+      renderHistory();
+    });
+  });
+
+  document.getElementById('regDateInput')?.addEventListener('change', e => {
+    _histDate = e.target.value;
+    renderHistory();
+  });
+
+  document.getElementById('regMonthInput')?.addEventListener('change', e => {
+    _histMonth = e.target.value;
+    renderHistory();
+  });
+
+  document.getElementById('regSearch')?.addEventListener('input', e => {
+    _histSearch = e.target.value.trim();
+    renderHistory();
+  });
+})();
+
+// ── CAIXA TAB TOGGLE ──
+function switchCaixaTab(tab) {
+  _caixaView = tab;
+  document.querySelectorAll('.caixa-tab-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  const entradasPanel = document.getElementById('caixaEntradasPanel');
+  const saidasPanel   = document.getElementById('caixaSaidasPanel');
+  if (tab === 'saidas') {
+    entradasPanel.style.display = 'none';
+    saidasPanel.style.display   = '';
+    // pre-select first cat and render grid
+    if (!_selectedExpenseCat) _selectedExpenseCat = expenseCats[0]?.id || null;
+    renderExpenseCatGrid();
+    setTimeout(() => document.getElementById('expenseAmount').focus(), 100);
+  } else {
+    saidasPanel.style.display   = 'none';
+    entradasPanel.style.display = '';
+  }
+}
+
+document.querySelectorAll('.caixa-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchCaixaTab(btn.dataset.tab));
+});
+
+// ── REGISTER EXPENSE (inline) ──
+document.getElementById('btnClearExpense').addEventListener('click', () => {
+  _selectedExpenseCat = expenseCats[0]?.id || null;
+  document.getElementById('expenseAmount').value = '';
+  document.getElementById('expenseDescription').value = '';
+  renderExpenseCatGrid();
+});
+
+document.getElementById('btnRegisterExpense').addEventListener('click', () => {
+  const amount = parseFloat(document.getElementById('expenseAmount').value);
+  if (!amount || amount <= 0) { showToast('⚠️ Insere um valor válido'); return; }
+  if (!_selectedExpenseCat) { showToast('⚠️ Seleciona uma categoria'); return; }
+  const cat = expenseCats.find(c => c.id === _selectedExpenseCat);
+  const description = document.getElementById('expenseDescription').value.trim();
+  const newExpense = {
+    id: 'exp' + Date.now(),
+    type: 'expense',
+    date: today(),
+    time: now(),
+    catId: cat?.id || '',
+    catName: cat?.name || 'Outro',
+    catIcon: cat?.icon || '📦',
+    total: amount,
+    description,
+    services: [],
+  };
+  entries.unshift(newExpense);
+  save();
+  if (sheetsUrl) syncEntry(newExpense);
+  // reset form
+  document.getElementById('expenseAmount').value = '';
+  document.getElementById('expenseDescription').value = '';
+  _selectedExpenseCat = expenseCats[0]?.id || null;
+  renderExpenseCatGrid();
+  rerenderAll();
+  showToast('✅ Saída registada!');
+});
+
+// ── STATS VIEW TOGGLE ──
+document.querySelectorAll('.sv-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    _statsView = btn.dataset.sv;
+    document.querySelectorAll('.sv-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderLineChart();
+    calcStats(_selectedMonth || dateKey(today()));
+  });
+});
 renderServices();
 renderClientSelector();
 // Sincroniza com Sheets no arranque se o URL estiver configurado
