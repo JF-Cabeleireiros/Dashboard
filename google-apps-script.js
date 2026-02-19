@@ -13,6 +13,25 @@
 //  10. Copia o URL gerado e cola na app em Config → URL do Apps Script
 // ══════════════════════════════════════════════════════════════════
 
+// ── DATE HELPER ──────────────────────────────────────────────────────────────
+/**
+ * Normaliza um valor de data vindo do Sheets para o formato "YYYY-MM-DD".
+ * O Sheets converte automaticamente strings de data em objetos Date, pelo que
+ * esta função garante que sempre devolvemos só a data, sem hora.
+ */
+function fmtDate(val) {
+  if (!val) return '';
+  if (val instanceof Date) {
+    // Usa o fuso horário do script (Utilities.formatDate usa o fuso do Spreadsheet)
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  // String com hora separada por espaço ou T (ex: "2026-02-19 00:00:00")
+  const s = String(val);
+  if (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) return s.slice(0, 10);
+  return s;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const SHEET_NAME     = 'Entradas';  // Nome da folha onde ficam as entradas
 const EXPENSES_SHEET = 'Saídas';    // Nome da folha onde ficam as saídas
 const STATS_SHEET    = 'Resumo';    // Nome da folha de resumo (criada automaticamente)
@@ -257,7 +276,7 @@ function getAllData() {
       try { parsedServices = row[6] ? JSON.parse(row[6]) : null; } catch (e) {}
       result.push({
         id: String(row[5] || i),
-        date: row[0],
+        date: fmtDate(row[0]),
         time: row[1],
         servicesLabel: row[2],
         services: parsedServices,
@@ -281,7 +300,7 @@ function getAllData() {
       result.push({
         type: 'expense',
         id: String(row[3]),
-        date: row[0],
+        date: fmtDate(row[0]),
         time: row[1],
         catIcon: String(row[2] || '📦'),
         catName: String(row[4] || 'Outro'),
@@ -311,7 +330,7 @@ function updateSummary() {
     const data = incSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      const dateStr = String(row[0]);
+      const dateStr = fmtDate(row[0]);
       const total = parseFloat(row[3]) || 0;
       const month = dateStr.slice(0, 7);
       if (!month || month.length < 7) continue;
@@ -328,7 +347,7 @@ function updateSummary() {
     const data = expSheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      const dateStr = String(row[0]);
+      const dateStr = fmtDate(row[0]);
       const total = parseFloat(row[6]) || 0;
       const month = dateStr.slice(0, 7);
       if (!month || month.length < 7) continue;
@@ -548,9 +567,9 @@ function getMonthData(month) {
   const result = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    if (row[0].startsWith(month)) {
+    if (fmtDate(row[0]).startsWith(month)) {
       result.push({
-        date: row[0],
+        date: fmtDate(row[0]),
         time: row[1],
         services: row[2],
         total: row[3],

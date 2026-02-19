@@ -347,7 +347,7 @@ header h1 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.entry-nota { font-size: 0.75rem; color: var(--text-soft); font-style: italic; }
+.entry-nota { font-size: 0.75rem; color: var(--text-soft); }
 .entry-value {
   font-family: 'DM Sans', sans-serif;
   font-size: 1.25rem;
@@ -999,7 +999,6 @@ header h1 {
 .client-notes {
   font-size: 0.73rem;
   color: var(--text-soft);
-  font-style: italic;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

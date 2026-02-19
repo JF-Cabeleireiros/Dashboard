@@ -72,6 +72,30 @@ let _adjAmount = 0;
 // ── HELPERS ──
 function fmt(v) { return v.toFixed(2).replace('.', ',') + ' €'; }
 function today() { return new Date().toISOString().slice(0, 10); }
+
+// Normalise a date value coming from localStorage/Sheets to "YYYY-MM-DD"
+function normDate(val) {
+  if (!val) return '';
+  const s = String(val);
+  // ISO string or anything with T / space separator
+  if (s.length > 10 && (s[10] === 'T' || s[10] === ' ')) return s.slice(0, 10);
+  return s;
+}
+
+// Normalise a time value to "HH:MM".
+// Sheets serialises times as fractional days anchored to 1899-12-30,
+// so we get "1899-12-30T21:27:00.000Z" — extract the UTC time portion.
+function normTime(val) {
+  if (!val) return '';
+  const s = String(val);
+  // ISO datetime — grab HH:MM from the T part
+  const tIdx = s.indexOf('T');
+  if (tIdx !== -1 && s.length >= tIdx + 6) return s.slice(tIdx + 1, tIdx + 6);
+  // Already "HH:MM" or "HH:MM:SS"
+  if (s.length >= 5 && s[2] === ':') return s.slice(0, 5);
+  return s;
+}
+
 function now() {
   const d = new Date();
   return d.toTimeString().slice(0, 5);
@@ -292,9 +316,9 @@ function renderHistory() {
   // ── 1. Filter by date range ──
   let pool;
   if (_histRange === 'day') {
-    pool = entries.filter(e => e.date === _histDate);
+    pool = entries.filter(e => normDate(e.date) === _histDate);
   } else if (_histRange === 'month') {
-    pool = entries.filter(e => e.date && e.date.startsWith(_histMonth));
+    pool = entries.filter(e => e.date && normDate(e.date).startsWith(_histMonth));
   } else {
     pool = [...entries];
   }
@@ -320,8 +344,8 @@ function renderHistory() {
 
   // ── 4. Sort most-recent first ──
   pool.sort((a, b) => {
-    const da = (a.date || '') + 'T' + (a.time || '00:00');
-    const db = (b.date || '') + 'T' + (b.time || '00:00');
+    const da = normDate(a.date || '') + 'T' + normTime(a.time || '00:00');
+    const db = normDate(b.date || '') + 'T' + normTime(b.time || '00:00');
     return db.localeCompare(da);
   });
 
@@ -356,11 +380,13 @@ function renderHistory() {
   const showDate = _histRange !== 'day';
 
   list.innerHTML = pool.map(e => {
-    const dateBadge = showDate ? `<div class="entry-date-small">${e.date}</div>` : '';
+    const eDate = normDate(e.date);
+    const eTime = normTime(e.time);
+    const dateBadge = showDate ? `<div class="entry-date-small">${eDate}</div>` : '';
     if (e.type === 'expense') {
       return `
       <div class="entry-card expense-entry-card">
-        <div class="entry-time"><div class="time">${e.time}</div>${dateBadge}</div>
+        <div class="entry-time"><div class="time">${eTime}</div>${dateBadge}</div>
         <div class="entry-info">
           <div class="expense-cat-badge">${e.catIcon || '📤'} ${e.catName || 'Saída'}</div>
           ${e.description ? `<div class="entry-nota">${e.description}</div>` : ''}
@@ -378,7 +404,7 @@ function renderHistory() {
     }
     return `
     <div class="entry-card">
-      <div class="entry-time"><div class="time">${e.time}</div>${dateBadge}</div>
+      <div class="entry-time"><div class="time">${eTime}</div>${dateBadge}</div>
       <div class="entry-info">
         ${e.clientName ? `<div class="entry-client">👤 ${e.clientName}</div>` : ''}
         <div class="entry-services">${(e.services||[]).map(s => s.count > 1 ? `${s.name}×${s.count}` : s.name).join(' · ')}</div>
@@ -1050,7 +1076,7 @@ function openClientHistory(clientId) {
 
   const clientEntries = entries
     .filter(e => e.clientName === client.name)
-    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    .sort((a, b) => (normDate(b.date) + normTime(b.time)).localeCompare(normDate(a.date) + normTime(a.time)));
 
   const list = document.getElementById('clientHistoryList');
   if (clientEntries.length === 0) {
@@ -1068,12 +1094,12 @@ function openClientHistory(clientId) {
           const sign = e.adjustment.type === 'discount' ? '-' : '+';
           adjBadge = `<span class="entry-adj-badge ${e.adjustment.type}">${sign}${fmt(e.adjustment.amount)}</span>`;
         }
-        const [, m, d] = e.date.split('-');
+        const [, m, d] = normDate(e.date).split('-');
         const dateLabel = `${parseInt(d)} ${MONTHS_PT[parseInt(m) - 1].slice(0, 3)}`;
         return `
         <div class="entry-card">
           <div class="entry-time">
-            <div class="time">${e.time}</div>
+            <div class="time">${normTime(e.time)}</div>
             <div class="entry-date-small">${dateLabel}</div>
           </div>
           <div class="entry-info">
